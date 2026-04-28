@@ -11,6 +11,7 @@ import {
   SeriesProgress,
   Stats,
 } from "@/lib/types";
+import { fetchCbdbSeriesFromBookUrl } from "@/lib/cbdb";
 
 const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? "";
 const booksSheetName = process.env.GOOGLE_SHEETS_BOOKS_SHEET ?? "Zoznam";
@@ -664,14 +665,10 @@ export async function getSeriesProgress(bookId: string): Promise<SeriesProgress 
   }
 
   const selectedSeries = parseSeriesInfo(selected.title);
-  if (!selectedSeries) {
-    return null;
-  }
-
-  const seriesItems: SeriesBookItem[] = books
+  const localSeriesItems: SeriesBookItem[] = books
     .map((book) => {
       const info = parseSeriesInfo(book.title);
-      if (!info || info.name !== selectedSeries.name) {
+      if (!info || !selectedSeries || info.name !== selectedSeries.name) {
         return null;
       }
 
@@ -688,9 +685,42 @@ export async function getSeriesProgress(bookId: string): Promise<SeriesProgress 
     .filter((item): item is SeriesBookItem => item !== null)
     .sort((a, b) => a.order - b.order);
 
+  const selectedCbdbUrl = sanitizeString(selected.cbdbUrl);
+  if (selectedCbdbUrl) {
+    try {
+      const remoteSeries = await fetchCbdbSeriesFromBookUrl(selectedCbdbUrl);
+      if (remoteSeries?.books.length) {
+        const localByOrder = new Map(localSeriesItems.map((item) => [item.order, item]));
+        const mergedItems = remoteSeries.books.map((remoteBook) => {
+          const local = localByOrder.get(remoteBook.order);
+          return {
+            id: local?.id ?? `cbdb-${remoteBook.order}`,
+            title: remoteBook.title,
+            author: local?.author ?? "",
+            order: remoteBook.order,
+            finishedAt: local?.finishedAt ?? "",
+            isRead: Boolean(local?.isRead),
+            cbdbUrl: remoteBook.url,
+          } satisfies SeriesBookItem;
+        });
+
+        return {
+          seriesName: remoteSeries.seriesName || selectedSeries?.displayName || "Séria",
+          books: mergedItems,
+        };
+      }
+    } catch {
+      // Fallback to local list when CBDB series scrape is unavailable.
+    }
+  }
+
+  if (!localSeriesItems.length) {
+    return null;
+  }
+
   return {
-    seriesName: selectedSeries.displayName,
-    books: seriesItems,
+    seriesName: selectedSeries?.displayName || "Séria",
+    books: localSeriesItems,
   };
 }
 

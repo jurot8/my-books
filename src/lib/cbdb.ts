@@ -74,6 +74,10 @@ function sanitizeBookTitle(value: string): string {
     .trim();
 }
 
+function stripTags(value: string): string {
+  return decodeHtml(value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+}
+
 export async function searchCbdb(query: string): Promise<CbdbSuggestion[]> {
   const cleanQuery = query.trim();
   if (cleanQuery.length < 2) {
@@ -219,5 +223,86 @@ export async function fetchCbdbMetadata(queryOrUrl: string): Promise<CbdbMetadat
     isbn: jsonIsbn || isbn,
     pages: Number.isFinite(jsonPages) && jsonPages > 0 ? jsonPages : Number(pagesText) || 0,
     publisher: jsonPublisher || publisher,
+  };
+}
+
+export type CbdbSeriesBook = {
+  title: string;
+  order: number;
+  url: string;
+};
+
+export type CbdbSeriesData = {
+  seriesName: string;
+  books: CbdbSeriesBook[];
+};
+
+function extractCbdbSeriesName(html: string): string {
+  const fromHeading = extractFirstMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  if (fromHeading) {
+    return stripTags(fromHeading).replace(/^Seznam a pořadí knih v sérii\s*/i, "").trim();
+  }
+
+  const title = extractFirstMatch(html, /<title>(.*?)<\/title>/i);
+  return stripTags(title).replace(/\s*\|\s*ČBDB\.cz.*$/i, "").trim();
+}
+
+export async function fetchCbdbSeriesFromBookUrl(bookUrl: string): Promise<CbdbSeriesData | null> {
+  const cleanBookUrl = bookUrl.trim();
+  if (!cleanBookUrl) {
+    return null;
+  }
+
+  const bookResponse = await fetch(cleanBookUrl, { method: "GET" });
+  if (!bookResponse.ok) {
+    throw new Error(`CBDB request failed with ${bookResponse.status}.`);
+  }
+
+  const bookHtml = await bookResponse.text();
+  const seriesPath = extractFirstMatch(
+    bookHtml,
+    /href="([^"]*knizni-serie-[^"]*)"/i,
+  );
+  if (!seriesPath) {
+    return null;
+  }
+
+  const seriesUrl = toAbsoluteCbdbUrl(normalizeHref(seriesPath));
+  const seriesResponse = await fetch(seriesUrl, { method: "GET" });
+  if (!seriesResponse.ok) {
+    throw new Error(`CBDB series request failed with ${seriesResponse.status}.`);
+  }
+
+  const seriesHtml = await seriesResponse.text();
+  const seriesName = extractCbdbSeriesName(seriesHtml);
+  const books: CbdbSeriesBook[] = [];
+  const seenOrders = new Set<number>();
+  const itemRegex =
+    /<a[^>]+href="([^"]*kniha-[^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]{0,260}?\((\d+)\.\s*díl\)/gi;
+
+  for (const match of seriesHtml.matchAll(itemRegex)) {
+    const href = normalizeHref(match[1] ?? "");
+    const title = stripTags(match[2] ?? "");
+    const order = Number(match[3]);
+    if (!href || !title || !Number.isFinite(order) || seenOrders.has(order)) {
+      continue;
+    }
+
+    seenOrders.add(order);
+    books.push({
+      title,
+      order,
+      url: toAbsoluteCbdbUrl(href),
+    });
+  }
+
+  books.sort((a, b) => a.order - b.order);
+  if (!books.length) {
+    return null;
+  }
+
+  return {
+    seriesName,
+    books,
   };
 }

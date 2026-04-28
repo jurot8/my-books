@@ -492,19 +492,17 @@ export default function Home() {
           <p className="muted">Prehľad kníh, citátov a štatistík nad Google Sheets.</p>
         </div>
         <div className="header-actions">
-          <Link href="/stats" className="btn primary link-btn header-btn">
+          <Link href="/stats" className="btn primary link-btn header-btn header-stats-btn">
             Štatistiky
           </Link>
-          <div className="account-panel">
-            <button
-              type="button"
-                className="btn secondary link-btn header-btn"
-                onClick={() => signOut()}
-              >
-              Odhlásiť
-            </button>
-            <span className="badge session-email">{session?.user?.email}</span>
-          </div>
+          <button
+            type="button"
+            className="btn secondary link-btn header-btn header-logout-btn"
+            onClick={() => signOut()}
+          >
+            Odhlásiť
+          </button>
+          <span className="badge session-email">{session?.user?.email}</span>
         </div>
       </header>
 
@@ -664,30 +662,6 @@ export default function Home() {
             >
               {saveBookLoading ? "Ukladám knihu..." : "Uložiť knihu"}
             </button>
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => {
-                setBookForm(emptyBookForm);
-                setSelectedBookId("");
-                setQuotes([]);
-                setSeriesProgress(null);
-              }}
-            >
-              Vyčistiť
-            </button>
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => {
-                setBookForm(emptyBookForm);
-                setSelectedBookId("");
-                setQuotes([]);
-                setSeriesProgress(null);
-              }}
-            >
-              Nová kniha
-            </button>
           </div>
 
           <button
@@ -698,6 +672,19 @@ export default function Home() {
             title="Doplniť metadáta z CBDB pre vybranú knihu"
           >
             {enrichBookLoading ? "Načítavam z CBDB..." : "Načítaj z CBDB"}
+          </button>
+          <button
+            type="button"
+            className="btn secondary mt"
+            onClick={() => {
+              setBookForm(emptyBookForm);
+              setSelectedBookId("");
+              setQuotes([]);
+              setSeriesProgress(null);
+              setBookMessage(null);
+            }}
+          >
+            Nová kniha
           </button>
 
           <label className="mt">Ručné dohľadanie metadát z cbdb.cz</label>

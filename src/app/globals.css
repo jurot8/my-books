@@ -45,22 +45,27 @@ h2 {
 }
 
 .header-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.account-panel {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "stats logout"
+    ". email";
+  align-items: end;
+  column-gap: 8px;
+  row-gap: 6px;
 }
 
 .header-btn {
   width: 148px;
   justify-content: center;
+}
+
+.header-stats-btn {
+  grid-area: stats;
+}
+
+.header-logout-btn {
+  grid-area: logout;
 }
 
 .stats-grid {
@@ -108,6 +113,8 @@ h2 {
 }
 
 .session-email {
+  grid-area: email;
+  justify-self: end;
   max-width: 280px;
   overflow-wrap: anywhere;
 }
@@ -413,16 +420,16 @@ th {
   }
 
   .header-actions {
-    flex-wrap: nowrap;
-    align-items: stretch;
-  }
-
-  .account-panel {
-    width: 100%;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "stats"
+      "logout"
+      "email";
     align-items: stretch;
   }
 
   .session-email {
+    justify-self: stretch;
     max-width: none;
   }
 
