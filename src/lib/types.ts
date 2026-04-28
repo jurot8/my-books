@@ -82,3 +82,19 @@ export type CbdbMetadata = {
   pages: number;
   publisher: string;
 };
+
+export type SeriesBookItem = {
+  id: string;
+  title: string;
+  author: string;
+  order: number;
+  finishedAt: string;
+  isRead: boolean;
+};
+
+export type SeriesProgress = {
+  seriesName: string;
+  currentOrder: number;
+  readBooks: SeriesBookItem[];
+  followingBooks: SeriesBookItem[];
+};

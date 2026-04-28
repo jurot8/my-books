@@ -166,6 +166,9 @@ textarea {
   width: auto;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 8px;
 }
 
 table {
@@ -211,6 +214,15 @@ th {
   justify-content: space-between;
   align-items: center;
   gap: 10px;
+}
+
+.series-box {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
 }
 
 .message-ok {

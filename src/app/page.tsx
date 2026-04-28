@@ -1,6 +1,14 @@
 "use client";
 
-import { Book, CbdbMetadata, CbdbSuggestion, PagedBooks, Quote, Stats } from "@/lib/types";
+import {
+  Book,
+  CbdbMetadata,
+  CbdbSuggestion,
+  PagedBooks,
+  Quote,
+  SeriesProgress,
+  Stats,
+} from "@/lib/types";
 import Link from "next/link";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -56,6 +64,7 @@ export default function Home() {
     totalPages: 1,
   });
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [seriesProgress, setSeriesProgress] = useState<SeriesProgress | null>(null);
   const [quotesLoading, setQuotesLoading] = useState(false);
   const [selectedBookId, setSelectedBookId] = useState("");
   const [filter, setFilter] = useState("");
@@ -137,6 +146,28 @@ export default function Home() {
       setQuoteMessage({ ok: false, text: message });
     } finally {
       setQuotesLoading(false);
+    }
+  }, []);
+
+  const loadSeriesProgress = useCallback(async (bookId: string) => {
+    if (!bookId) {
+      setSeriesProgress(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/books/${bookId}/series`);
+      const data = (await response.json()) as {
+        series?: SeriesProgress | null;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Load failed.");
+      }
+
+      setSeriesProgress(data.series ?? null);
+    } catch {
+      setSeriesProgress(null);
     }
   }, []);
 
@@ -233,6 +264,7 @@ export default function Home() {
       setTitleSuggestions([]);
       await refreshAfterBookChange();
       await loadQuotes(savedBook.id);
+      await loadSeriesProgress(savedBook.id);
       setBookMessage({ ok: true, text: "Kniha ulozena." });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
@@ -348,7 +380,11 @@ export default function Home() {
         throw new Error(data.error ?? "Metadata enrich failed.");
       }
 
-      await Promise.all([refreshAfterBookChange(), loadQuotes(selectedBookId)]);
+      await Promise.all([
+        refreshAfterBookChange(),
+        loadQuotes(selectedBookId),
+        loadSeriesProgress(selectedBookId),
+      ]);
       setBookMessage({ ok: true, text: "Metadata z CBDB doplnene." });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Metadata enrich failed.";
@@ -377,6 +413,7 @@ export default function Home() {
       cbdbUrl: book.cbdbUrl || "",
     });
     void loadQuotes(book.id);
+    void loadSeriesProgress(book.id);
   }
 
   if (status === "loading") {
@@ -390,7 +427,7 @@ export default function Home() {
           <h1>My Books</h1>
           <p>Prihlasenie je povolene iba pre tvoj ucet.</p>
           <button type="button" className="btn primary" onClick={() => signIn("google")}>
-            Prihlasit sa cez Google
+            Prihlásiť sa cez Google
           </button>
         </section>
       </main>
@@ -405,12 +442,12 @@ export default function Home() {
           <p className="muted">Prehlad knih, citatov a statistik nad Google Sheets.</p>
         </div>
         <div className="header-actions">
-          <Link href="/stats" className="btn secondary link-btn">
+          <Link href="/stats" className="btn primary link-btn">
             Statistiky a grafy
           </Link>
           <span className="badge">{session?.user?.email}</span>
           <button type="button" className="btn secondary" onClick={() => signOut()}>
-            Odhlasit
+            Odhlásiť
           </button>
         </div>
       </header>
@@ -544,7 +581,7 @@ export default function Home() {
 
           <div className="row mt">
             <button type="button" className="btn primary" onClick={saveBook}>
-              Ulozit knihu
+              Uložiť knihu
             </button>
             <button
               type="button"
@@ -555,12 +592,12 @@ export default function Home() {
                 setQuotes([]);
               }}
             >
-              Vycistit
+              Vyčistiť
             </button>
           </div>
 
           <button type="button" className="btn secondary mt" onClick={enrichSelectedBookFromCbdb}>
-            Doplni metadata z CBDB pre vybratu knihu
+            Doplniť metadáta z CBDB pre vybranú knihu
           </button>
 
           <label className="mt">Rucne dohladanie metadat z cbdb.cz</label>
@@ -571,7 +608,7 @@ export default function Home() {
               placeholder="Nazov knihy alebo URL"
             />
             <button type="button" className="btn secondary" onClick={loadCbdb}>
-              Nacitat
+              Načítať
             </button>
           </div>
           <pre className="muted pre-wrap">{cbdbResult}</pre>
@@ -589,7 +626,7 @@ export default function Home() {
               onChange={(event) => setFilter(event.target.value)}
             />
             <button type="button" className="btn secondary" onClick={() => void loadBooksPage(1, filter)}>
-              Hladat
+              Hľadať
             </button>
           </div>
           {listLoading ? <p className="muted">Nacitavam zoznam...</p> : null}
@@ -638,7 +675,7 @@ export default function Home() {
               disabled={booksPage.page <= 1}
               onClick={() => void loadBooksPage(booksPage.page - 1, filter)}
             >
-              Predosla
+              Predošlá
             </button>
             <span className="muted small-text">
               Strana {booksPage.page} / {booksPage.totalPages} ({booksPage.total} knih)
@@ -649,7 +686,7 @@ export default function Home() {
               disabled={booksPage.page >= booksPage.totalPages}
               onClick={() => void loadBooksPage(booksPage.page + 1, filter)}
             >
-              Dalsia
+              Ďalšia
             </button>
           </div>
         </article>
@@ -663,7 +700,40 @@ export default function Home() {
               ? `Vybrana kniha: ${selectedBook.title} (${selectedBook.author || "bez autora"})`
               : "Najprv vyber knihu z tabulky."}
           </p>
-          {quotesLoading ? <p className="muted">Nacitavam citaty...</p> : null}
+              {quotesLoading ? <p className="muted">Nacitavam citaty...</p> : null}
+          {seriesProgress ? (
+            <div className="series-box">
+              <p className="muted">
+                Séria: <strong>{seriesProgress.seriesName}</strong> (aktuálne diel {seriesProgress.currentOrder})
+              </p>
+              <div className="row">
+                <div>
+                  <label>Už prečítané v sérii</label>
+                  {seriesProgress.readBooks.length ? (
+                    seriesProgress.readBooks.map((item) => (
+                      <div key={item.id} className="small-text">
+                        {item.order}. {item.title}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="small-text muted">Zatiaľ bez prečítaných dielov.</div>
+                  )}
+                </div>
+                <div>
+                  <label>Nasledujúce diely</label>
+                  {seriesProgress.followingBooks.length ? (
+                    seriesProgress.followingBooks.map((item) => (
+                      <div key={item.id} className="small-text">
+                        {item.order}. {item.title} {item.isRead ? "(prečítané)" : "(čaká)"}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="small-text muted">Nenašli sa ďalšie diely v zozname.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <label>Citat *</label>
           <textarea
@@ -693,14 +763,14 @@ export default function Home() {
           />
           <div className="row mt">
             <button type="button" className="btn primary" onClick={saveQuote}>
-              Ulozit citat
+              Uložiť citát
             </button>
             <button
               type="button"
               className="btn secondary"
               onClick={() => setQuoteForm({ id: "", quote: "", page: "", context: "", tags: "" })}
             >
-              Vycistit
+              Vyčistiť
             </button>
           </div>
           {quoteMessage ? (

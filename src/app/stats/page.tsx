@@ -85,7 +85,7 @@ export default function StatsPage() {
           <h1>My Books - Statistiky</h1>
           <p>Prihlasenie je povolene iba pre tvoj ucet.</p>
           <button type="button" className="btn primary" onClick={() => signIn("google")}>
-            Prihlasit sa cez Google
+            Prihlásiť sa cez Google
           </button>
         </section>
       </main>
@@ -100,7 +100,7 @@ export default function StatsPage() {
           <p className="muted">Prehlad citania podla rokov, mesiacov a autorov.</p>
         </div>
         <Link href="/" className="btn secondary link-btn">
-          Spat na hlavnu stranku
+          Späť na hlavnú stránku
         </Link>
       </header>
 

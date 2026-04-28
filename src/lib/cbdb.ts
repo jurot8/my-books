@@ -34,6 +34,10 @@ function toAbsoluteCbdbUrl(value: string): string {
   return `https://www.cbdb.cz/${value}`;
 }
 
+function normalizeHref(value: string): string {
+  return decodeHtml(value.trim());
+}
+
 function parseJsonLd(html: string): Record<string, unknown>[] {
   const matches = [...html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)];
   const output: Record<string, unknown>[] = [];
@@ -85,12 +89,12 @@ export async function searchCbdb(query: string): Promise<CbdbSuggestion[]> {
   const html = await response.text();
   const suggestions: CbdbSuggestion[] = [];
   const seen = new Set<string>();
-  const regex = /<a[^>]+href="([^"]*\/kniha[^"]*)"[^>]*>(.*?)<\/a>/gi;
+  const regex = /<a[^>]+href="([^"]*kniha[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
 
   for (const match of html.matchAll(regex)) {
-    const relativeUrl = match[1] ?? "";
+    const relativeUrl = normalizeHref(match[1] ?? "");
     const title = decodeHtml((match[2] ?? "").replace(/<[^>]+>/g, "").trim());
-    if (!relativeUrl || !title) {
+    if (!relativeUrl || !title || /cbdb/i.test(title)) {
       continue;
     }
 
@@ -108,6 +112,27 @@ export async function searchCbdb(query: string): Promise<CbdbSuggestion[]> {
 
     if (suggestions.length >= 10) {
       break;
+    }
+  }
+
+  if (suggestions.length === 0) {
+    const fallbackRegex = /"(\/kniha-[^"]+)"/gi;
+    for (const match of html.matchAll(fallbackRegex)) {
+      const fullUrl = toAbsoluteCbdbUrl(normalizeHref(match[1] ?? ""));
+      if (!fullUrl || seen.has(fullUrl)) {
+        continue;
+      }
+
+      seen.add(fullUrl);
+      suggestions.push({
+        title: cleanQuery,
+        author: "",
+        url: fullUrl,
+      });
+
+      if (suggestions.length >= 5) {
+        break;
+      }
     }
   }
 

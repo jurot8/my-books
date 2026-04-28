@@ -1,6 +1,16 @@
 import { google, sheets_v4 } from "googleapis";
 import { randomUUID } from "crypto";
-import { Book, BookInput, BootstrapData, PagedBooks, Quote, QuoteInput, Stats } from "@/lib/types";
+import {
+  Book,
+  BookInput,
+  BootstrapData,
+  PagedBooks,
+  Quote,
+  QuoteInput,
+  SeriesBookItem,
+  SeriesProgress,
+  Stats,
+} from "@/lib/types";
 
 const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? "";
 const booksSheetName = process.env.GOOGLE_SHEETS_BOOKS_SHEET ?? "Zoznam";
@@ -104,6 +114,32 @@ function extractYear(value: string): string {
   }
 
   return "";
+}
+
+type SeriesInfo = {
+  displayName: string;
+  name: string;
+  order: number;
+};
+
+function parseSeriesInfo(title: string): SeriesInfo | null {
+  const cleanTitle = sanitizeString(title);
+  const match = cleanTitle.match(/\(([^()]*?)\s+(\d+)\)\s*$/);
+  if (!match) {
+    return null;
+  }
+
+  const seriesName = sanitizeString(match[1]);
+  const order = Number(match[2]);
+  if (!seriesName || !Number.isFinite(order) || order <= 0) {
+    return null;
+  }
+
+  return {
+    displayName: seriesName,
+    name: seriesName.toLowerCase(),
+    order,
+  };
 }
 
 function parseDate(value: string): ParsedDate | null {
@@ -306,7 +342,7 @@ async function readBooks(): Promise<Book[]> {
     ranges: [`'${booksSheetName}'!A${booksStartRow}:D`],
     includeGridData: true,
     fields:
-      "sheets(data(rowData(values(formattedValue,hyperlink,userEnteredValue.formulaValue))))",
+      "sheets(data(rowData(values(formattedValue,hyperlink,userEnteredValue.formulaValue,textFormatRuns(format(link(uri)))))))",
   });
 
   const rows = response.data.sheets?.[0]?.data?.[0]?.rowData ?? [];
@@ -496,22 +532,65 @@ function extractRowNumberFromRange(range?: string | null): number | null {
   return Number(match[1]);
 }
 
-function escapeFormulaText(value: string): string {
-  return sanitizeString(value).replace(/"/g, '""');
-}
+async function setBookTitleCellLink(
+  sheets: sheets_v4.Sheets,
+  rowNumber: number,
+  title: string,
+  cbdbUrl: string,
+): Promise<void> {
+  const sheetId = await getSheetIdByTitle(sheets, booksSheetName);
+  if (sheetId === null) {
+    return;
+  }
 
-function toBookTitleCellValue(title: string, cbdbUrl: string): string {
   const cleanTitle = sanitizeString(title);
   const cleanUrl = sanitizeString(cbdbUrl);
-  if (!cleanTitle) {
-    return "";
+
+  const cellData: sheets_v4.Schema$CellData = {
+    userEnteredValue: {
+      stringValue: cleanTitle,
+    },
+  };
+
+  if (cleanUrl) {
+    cellData.textFormatRuns = [
+      {
+        startIndex: 0,
+        format: {
+          link: {
+            uri: cleanUrl,
+          },
+        },
+      },
+    ];
+  } else {
+    cellData.textFormatRuns = [];
   }
 
-  if (!cleanUrl) {
-    return cleanTitle;
-  }
-
-  return `=HYPERLINK("${escapeFormulaText(cleanUrl)}","${escapeFormulaText(cleanTitle)}")`;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          updateCells: {
+            range: {
+              sheetId,
+              startRowIndex: rowNumber - 1,
+              endRowIndex: rowNumber,
+              startColumnIndex: 1,
+              endColumnIndex: 2,
+            },
+            rows: [
+              {
+                values: [cellData],
+              },
+            ],
+            fields: "userEnteredValue,textFormatRuns",
+          },
+        },
+      ],
+    },
+  });
 }
 
 export async function getBootstrapData(): Promise<BootstrapData> {
@@ -576,6 +655,51 @@ export async function listQuotesByBookId(bookId: string): Promise<Quote[]> {
   return quotes.filter((quote) => sanitizeString(quote.bookId) === cleanBookId);
 }
 
+export async function getSeriesProgress(bookId: string): Promise<SeriesProgress | null> {
+  await ensureSchema();
+  const books = await readBooks();
+  const selected = books.find((book) => book.id === sanitizeString(bookId));
+  if (!selected) {
+    throw new Error(`Book ${bookId} was not found.`);
+  }
+
+  const selectedSeries = parseSeriesInfo(selected.title);
+  if (!selectedSeries) {
+    return null;
+  }
+
+  const seriesItems: SeriesBookItem[] = books
+    .map((book) => {
+      const info = parseSeriesInfo(book.title);
+      if (!info || info.name !== selectedSeries.name) {
+        return null;
+      }
+
+      return {
+        id: book.id,
+        title: book.title,
+        author: book.author,
+        order: info.order,
+        finishedAt: book.finishedAt,
+        isRead: Boolean(sanitizeString(book.finishedAt)),
+      } satisfies SeriesBookItem;
+    })
+    .filter((item): item is SeriesBookItem => item !== null)
+    .sort((a, b) => a.order - b.order);
+
+  const readSeriesBooks = seriesItems.filter(
+    (item) => item.order <= selectedSeries.order && item.isRead,
+  );
+  const followingBooks = seriesItems.filter((item) => item.order > selectedSeries.order);
+
+  return {
+    seriesName: selectedSeries.displayName,
+    currentOrder: selectedSeries.order,
+    readBooks: readSeriesBooks,
+    followingBooks,
+  };
+}
+
 export async function addBook(input: BookInput): Promise<Book> {
   await ensureSchema();
   if (!sanitizeString(input.title)) {
@@ -585,7 +709,7 @@ export async function addBook(input: BookInput): Promise<Book> {
   const sheets = getSheetsClient();
   const row = [
     sanitizeString(input.author),
-    toBookTitleCellValue(sanitizeString(input.title), sanitizeString(input.cbdbUrl)),
+    sanitizeString(input.title),
     sanitizeString(input.finishedAt),
     sanitizeString(input.notes),
   ];
@@ -604,6 +728,12 @@ export async function addBook(input: BookInput): Promise<Book> {
     extractRowNumberFromRange(appendResult.data.updates?.updatedRange) ??
     booksStartRow;
   const id = bookIdFromRow(rowNumber);
+  await setBookTitleCellLink(
+    sheets,
+    rowNumber,
+    sanitizeString(input.title),
+    sanitizeString(input.cbdbUrl),
+  );
 
   await upsertBookMeta(id, input);
   return getBookById(id);
@@ -633,7 +763,7 @@ export async function updateBook(bookId: string, patch: BookInput): Promise<Book
 
   const updated = [
     nextAuthor,
-    toBookTitleCellValue(nextTitle, nextCbdbUrl),
+    nextTitle,
     nextDate,
     nextNotes,
   ];
@@ -646,6 +776,7 @@ export async function updateBook(bookId: string, patch: BookInput): Promise<Book
       values: [updated],
     },
   });
+  await setBookTitleCellLink(sheets, rowNumber, nextTitle, nextCbdbUrl);
 
   await upsertBookMeta(bookId, patch);
   return getBookById(bookId);
