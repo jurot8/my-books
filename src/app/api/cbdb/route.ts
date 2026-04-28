@@ -14,7 +14,7 @@ export async function GET(request: Request) {
 
   if (!query) {
     return NextResponse.json(
-      { error: "Vypln nazov knihy alebo URL z cbdb.cz." },
+      { error: "Vyplň názov knihy alebo URL z cbdb.cz." },
       { status: 400 },
     );
   }

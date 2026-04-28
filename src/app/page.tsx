@@ -11,7 +11,7 @@ import {
 } from "@/lib/types";
 import Link from "next/link";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Message = {
   text: string;
@@ -82,6 +82,7 @@ export default function Home() {
   const [cbdbQuery, setCbdbQuery] = useState("");
   const [titleSuggestions, setTitleSuggestions] = useState<CbdbSuggestion[]>([]);
   const [titleSuggestLoading, setTitleSuggestLoading] = useState(false);
+  const skipSuggestionQueryRef = useRef(false);
 
   const selectedBook = useMemo(
     () => booksPage.items.find((book) => book.id === selectedBookId) ?? null,
@@ -186,6 +187,11 @@ export default function Home() {
 
   useEffect(() => {
     const query = bookForm.title.trim();
+    if (skipSuggestionQueryRef.current) {
+      skipSuggestionQueryRef.current = false;
+      return;
+    }
+
     if (query.length < 2) {
       const timer = window.setTimeout(() => setTitleSuggestions([]), 0);
       return () => window.clearTimeout(timer);
@@ -220,6 +226,39 @@ export default function Home() {
       clearTimeout(handle);
     };
   }, [bookForm.title]);
+
+  async function handleSuggestionSelect(item: CbdbSuggestion) {
+    skipSuggestionQueryRef.current = true;
+    setTitleSuggestions([]);
+    setTitleSuggestLoading(false);
+    setBookForm((prev) => ({
+      ...prev,
+      title: item.title || prev.title,
+      author: item.author || prev.author,
+      cbdbUrl: item.url || prev.cbdbUrl,
+    }));
+
+    try {
+      const response = await fetch(`/api/cbdb?q=${encodeURIComponent(item.url)}`);
+      const data = (await response.json()) as CbdbMetadata | { error?: string };
+      if (!response.ok) {
+        throw new Error("error" in data ? data.error : "CBDB lookup failed.");
+      }
+
+      const metadata = data as CbdbMetadata;
+      setBookForm((prev) => ({
+        ...prev,
+        title: metadata.pageTitle || item.title || prev.title,
+        author: metadata.author || prev.author,
+        publisher: prev.publisher || metadata.publisher || "",
+        isbn: prev.isbn || metadata.isbn || "",
+        pages: prev.pages || (metadata.pages ? String(metadata.pages) : ""),
+        cbdbUrl: metadata.canonicalUrl || item.url || prev.cbdbUrl,
+      }));
+    } catch {
+      // Keep prefilled values from selected suggestion when metadata fetch fails.
+    }
+  }
 
   async function refreshAfterBookChange() {
     await Promise.all([loadStats(), loadBooksPage(booksPage.page, filter)]);
@@ -327,7 +366,7 @@ export default function Home() {
   }
 
   async function loadCbdb() {
-    setCbdbResult("Nacitavam...");
+    setCbdbResult("Načítavam...");
     try {
       const response = await fetch(`/api/cbdb?q=${encodeURIComponent(cbdbQuery)}`);
       const data = (await response.json()) as CbdbMetadata | { error?: string };
@@ -337,7 +376,7 @@ export default function Home() {
 
       const metadata = data as CbdbMetadata;
       const output = [
-        metadata.pageTitle ? `Nazov: ${metadata.pageTitle}` : "",
+        metadata.pageTitle ? `Názov: ${metadata.pageTitle}` : "",
         metadata.author ? `Autor: ${metadata.author}` : "",
         metadata.publisher ? `Vydavatel: ${metadata.publisher}` : "",
         metadata.pages ? `Pocet stran: ${metadata.pages}` : "",
@@ -393,6 +432,7 @@ export default function Home() {
   }
 
   function selectBook(book: Book) {
+    skipSuggestionQueryRef.current = true;
     setSelectedBookId(book.id);
     setTitleSuggestions([]);
     setQuoteForm({ id: "", quote: "", page: "", context: "", tags: "" });
@@ -424,8 +464,8 @@ export default function Home() {
     return (
       <main className="center-screen">
         <section className="card auth-card">
-          <h1>My Books</h1>
-          <p>Prihlasenie je povolene iba pre tvoj ucet.</p>
+          <h1 className="page-title">My Books</h1>
+          <p>Prihlásenie je povolené iba pre tvoj účet.</p>
           <button type="button" className="btn primary" onClick={() => signIn("google")}>
             Prihlásiť sa cez Google
           </button>
@@ -438,45 +478,51 @@ export default function Home() {
     <main className="container">
       <header className="header">
         <div>
-          <h1>My Books</h1>
-          <p className="muted">Prehlad knih, citatov a statistik nad Google Sheets.</p>
+          <h1 className="page-title">My Books</h1>
+          <p className="muted">Prehľad kníh, citátov a štatistík nad Google Sheets.</p>
         </div>
         <div className="header-actions">
           <Link href="/stats" className="btn primary link-btn">
-            Statistiky a grafy
+            Štatistiky
           </Link>
-          <span className="badge">{session?.user?.email}</span>
-          <button type="button" className="btn secondary" onClick={() => signOut()}>
-            Odhlásiť
-          </button>
+          <div className="account-panel">
+            <button
+              type="button"
+              className="btn secondary link-btn"
+              onClick={() => signOut()}
+            >
+              Odhlásiť
+            </button>
+            <span className="badge session-email">{session?.user?.email}</span>
+          </div>
         </div>
       </header>
 
       <section className="stats-grid">
         <article className="card">
-          <div className="muted">Precitane knihy</div>
+          <div className="muted">Prečítané knihy</div>
           <div className="stat-number">{stats.readBooks}</div>
         </article>
         <article className="card">
-          <div className="muted">Precitane tento rok</div>
+          <div className="muted">Prečítané tento rok</div>
           <div className="stat-number">{stats.readThisYear}</div>
         </article>
         <article className="card">
-          <div className="muted">Rocny priemer</div>
+          <div className="muted">Ročný priemer</div>
           <div className="stat-number">{stats.averagePerYear}</div>
         </article>
         <article className="card">
-          <div className="muted">Priemerne hodnotenie</div>
+          <div className="muted">Priemerné hodnotenie</div>
           <div className="stat-number">{stats.avgRating}</div>
         </article>
       </section>
 
-      {statsLoading ? <div className="card muted">Nacitavam statistiky...</div> : null}
+      {statsLoading ? <div className="card muted">Načítavam štatistiky...</div> : null}
 
       <section className="two-col">
         <article className="card">
-          <h2>Pridat / upravit knihu</h2>
-          <label>Nazov *</label>
+          <h2>Pridať / upraviť knihu</h2>
+          <label>Názov *</label>
           <input
             value={bookForm.title}
             onChange={(event) => setBookForm((prev) => ({ ...prev, title: event.target.value }))}
@@ -491,15 +537,7 @@ export default function Home() {
                   key={item.url}
                   type="button"
                   className="suggestion-item"
-                  onClick={() => {
-                    setBookForm((prev) => ({
-                      ...prev,
-                      title: item.title || prev.title,
-                      author: item.author || prev.author,
-                      cbdbUrl: item.url || prev.cbdbUrl,
-                    }));
-                    setTitleSuggestions([]);
-                  }}
+                  onClick={() => void handleSuggestionSelect(item)}
                 >
                   <strong>{item.title}</strong>
                   <span className="muted">{item.url}</span>
@@ -605,7 +643,7 @@ export default function Home() {
             <input
               value={cbdbQuery}
               onChange={(event) => setCbdbQuery(event.target.value)}
-              placeholder="Nazov knihy alebo URL"
+              placeholder="Názov knihy alebo URL"
             />
             <button type="button" className="btn secondary" onClick={loadCbdb}>
               Načítať
@@ -629,38 +667,44 @@ export default function Home() {
               Hľadať
             </button>
           </div>
-          {listLoading ? <p className="muted">Nacitavam zoznam...</p> : null}
+          {listLoading ? <p className="muted">Načítavam zoznam...</p> : null}
           <div className="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Nazov</th>
+                  <th>Názov</th>
                   <th>Autor</th>
                   <th>Datum</th>
                   <th>Rating</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {booksPage.items.length ? (
                   booksPage.items.map((book) => (
                     <tr key={book.id} className="clickable" onClick={() => selectBook(book)}>
-                      <td>
-                        {book.cbdbUrl ? (
-                          <a href={book.cbdbUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-                            {book.title}
-                          </a>
-                        ) : (
-                          book.title
-                        )}
-                      </td>
+                      <td>{book.title}</td>
                       <td>{book.author}</td>
                       <td>{book.finishedAt}</td>
                       <td>{book.rating || ""}</td>
+                      <td className="book-link-cell">
+                        {book.cbdbUrl ? (
+                          <a
+                            href={book.cbdbUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn secondary compact link-btn row-cbdb-btn"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            CBDB
+                          </a>
+                        ) : null}
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="muted">
+                    <td colSpan={5} className="muted">
                       Bez dat.
                     </td>
                   </tr>
@@ -698,9 +742,9 @@ export default function Home() {
           <p className="muted">
             {selectedBook
               ? `Vybrana kniha: ${selectedBook.title} (${selectedBook.author || "bez autora"})`
-              : "Najprv vyber knihu z tabulky."}
+              : "Najprv vyber knihu z tabuľky."}
           </p>
-              {quotesLoading ? <p className="muted">Nacitavam citaty...</p> : null}
+              {quotesLoading ? <p className="muted">Načítavam citáty...</p> : null}
           {seriesProgress ? (
             <div className="series-box">
               <p className="muted">
@@ -779,7 +823,7 @@ export default function Home() {
         </article>
 
         <article className="card">
-          <h2>Zoznam citatov</h2>
+          <h2>Zoznam citátov</h2>
           <div className="table-scroll">
             <table>
               <thead>
@@ -822,7 +866,7 @@ export default function Home() {
                 ) : (
                   <tr>
                     <td colSpan={4} className="muted">
-                      Bez citatov.
+                      Bez citátov.
                     </td>
                   </tr>
                 )}

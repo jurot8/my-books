@@ -83,7 +83,7 @@ export default function StatsPage() {
       <main className="center-screen">
         <section className="card auth-card">
           <h1>My Books - Statistiky</h1>
-          <p>Prihlasenie je povolene iba pre tvoj ucet.</p>
+          <p>Prihlásenie je povolené iba pre tvoj účet.</p>
           <button type="button" className="btn primary" onClick={() => signIn("google")}>
             Prihlásiť sa cez Google
           </button>
@@ -97,37 +97,37 @@ export default function StatsPage() {
       <header className="header">
         <div>
           <h1>Statistiky a grafy</h1>
-          <p className="muted">Prehlad citania podla rokov, mesiacov a autorov.</p>
+          <p className="muted">Prehľad čítania podľa rokov, mesiacov a autorov.</p>
         </div>
         <Link href="/" className="btn secondary link-btn">
           Späť na hlavnú stránku
         </Link>
       </header>
 
-      {loading ? <section className="card">Nacitavam...</section> : null}
+      {loading ? <section className="card">Načítavam...</section> : null}
       {error ? <section className="card message-error">{error}</section> : null}
 
       <section className="stats-grid">
         <article className="card">
-          <div className="muted">Precitane knihy</div>
+          <div className="muted">Prečítané knihy</div>
           <div className="stat-number">{stats.readBooks}</div>
         </article>
         <article className="card">
-          <div className="muted">Precitane tento rok</div>
+          <div className="muted">Prečítané tento rok</div>
           <div className="stat-number">{stats.readThisYear}</div>
         </article>
         <article className="card">
-          <div className="muted">Rocny priemer</div>
+          <div className="muted">Ročný priemer</div>
           <div className="stat-number">{stats.averagePerYear}</div>
         </article>
         <article className="card">
-          <div className="muted">Priemerne hodnotenie</div>
+          <div className="muted">Priemerné hodnotenie</div>
           <div className="stat-number">{stats.avgRating}</div>
         </article>
       </section>
 
       <section className="card">
-        <h2>Knihy podla rokov</h2>
+        <h2>Knihy podľa rokov</h2>
         <div className="chart-list">
           {yearRows.map((item) => (
             <div key={item.key} className="chart-row">
@@ -143,7 +143,7 @@ export default function StatsPage() {
 
       <section className="two-col">
         <article className="card">
-          <h2>Mesacny graf</h2>
+          <h2>Mesačný graf</h2>
           <label>Rok</label>
           <select value={selectedYear} onChange={(event) => setSelectedYear(event.target.value)}>
             {yearRows.map((item) => (

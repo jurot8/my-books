@@ -23,6 +23,12 @@ h2 {
   margin: 0;
 }
 
+.page-title {
+  font-size: clamp(2rem, 3.4vw, 2.6rem);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
 .container {
   width: min(1200px, 100%);
   margin: 0 auto;
@@ -42,6 +48,13 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.account-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
 }
 
 .stats-grid {
@@ -86,6 +99,11 @@ h2 {
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 12px;
+}
+
+.session-email {
+  max-width: 280px;
+  overflow-wrap: anywhere;
 }
 
 .stat-number {
@@ -206,6 +224,17 @@ th {
 .table-scroll {
   width: 100%;
   overflow-x: auto;
+}
+
+.book-link-cell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.row-cbdb-btn {
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .pagination-row {
@@ -354,6 +383,16 @@ th {
 
   .header-actions {
     flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .account-panel {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .session-email {
+    max-width: none;
   }
 
   .stats-grid {
