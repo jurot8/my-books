@@ -68,6 +68,7 @@ export default function Home() {
   const [quotesLoading, setQuotesLoading] = useState(false);
   const [selectedBookId, setSelectedBookId] = useState("");
   const [filter, setFilter] = useState("");
+  const [saveBookLoading, setSaveBookLoading] = useState(false);
   const [bookMessage, setBookMessage] = useState<Message | null>(null);
   const [quoteMessage, setQuoteMessage] = useState<Message | null>(null);
   const [cbdbResult, setCbdbResult] = useState("");
@@ -266,6 +267,7 @@ export default function Home() {
 
   async function saveBook() {
     setBookMessage(null);
+    setSaveBookLoading(true);
     const payload = {
       title: bookForm.title,
       author: bookForm.author,
@@ -304,10 +306,12 @@ export default function Home() {
       await refreshAfterBookChange();
       await loadQuotes(savedBook.id);
       await loadSeriesProgress(savedBook.id);
-      setBookMessage({ ok: true, text: "Kniha ulozena." });
+      setBookMessage({ ok: true, text: "Kniha bola úspešne uložená." });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
       setBookMessage({ ok: false, text: message });
+    } finally {
+      setSaveBookLoading(false);
     }
   }
 
@@ -343,7 +347,7 @@ export default function Home() {
 
       setQuoteForm({ id: "", quote: "", page: "", context: "", tags: "" });
       await Promise.all([loadStats(), loadQuotes(selectedBookId)]);
-      setQuoteMessage({ ok: true, text: "Citat ulozeny." });
+      setQuoteMessage({ ok: true, text: "Citát uložený." });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
       setQuoteMessage({ ok: false, text: message });
@@ -378,8 +382,8 @@ export default function Home() {
       const output = [
         metadata.pageTitle ? `Názov: ${metadata.pageTitle}` : "",
         metadata.author ? `Autor: ${metadata.author}` : "",
-        metadata.publisher ? `Vydavatel: ${metadata.publisher}` : "",
-        metadata.pages ? `Pocet stran: ${metadata.pages}` : "",
+        metadata.publisher ? `Vydavateľ: ${metadata.publisher}` : "",
+        metadata.pages ? `Počet strán: ${metadata.pages}` : "",
         metadata.isbn ? `ISBN: ${metadata.isbn}` : "",
         metadata.description ? `Popis: ${metadata.description}` : "",
         metadata.canonicalUrl ? `URL: ${metadata.canonicalUrl}` : "",
@@ -583,7 +587,7 @@ export default function Home() {
 
           <div className="row">
             <div>
-              <label>Zaciatok</label>
+              <label>Začiatok</label>
               <input
                 value={bookForm.startedAt}
                 onChange={(event) =>
@@ -592,7 +596,7 @@ export default function Home() {
               />
             </div>
             <div>
-              <label>Datum precitania</label>
+              <label>Dátum prečítania</label>
               <input
                 placeholder="napr. 29.5.2020"
                 value={bookForm.finishedAt}
@@ -611,15 +615,20 @@ export default function Home() {
             }
           />
 
-          <label>Poznamka</label>
+          <label>Poznámka</label>
           <textarea
             value={bookForm.notes}
             onChange={(event) => setBookForm((prev) => ({ ...prev, notes: event.target.value }))}
           />
 
           <div className="row mt">
-            <button type="button" className="btn primary" onClick={saveBook}>
-              Uložiť knihu
+            <button
+              type="button"
+              className="btn primary"
+              onClick={saveBook}
+              disabled={saveBookLoading}
+            >
+              {saveBookLoading ? "Ukladám knihu..." : "Uložiť knihu"}
             </button>
             <button
               type="button"
@@ -638,7 +647,7 @@ export default function Home() {
             Doplniť metadáta z CBDB pre vybranú knihu
           </button>
 
-          <label className="mt">Rucne dohladanie metadat z cbdb.cz</label>
+          <label className="mt">Ručné dohľadanie metadát z cbdb.cz</label>
           <div className="row">
             <input
               value={cbdbQuery}
@@ -650,6 +659,7 @@ export default function Home() {
             </button>
           </div>
           <pre className="muted pre-wrap">{cbdbResult}</pre>
+          {saveBookLoading ? <p className="muted">Prebieha ukladanie knihy...</p> : null}
           {bookMessage ? (
             <p className={bookMessage.ok ? "message-ok" : "message-error"}>{bookMessage.text}</p>
           ) : null}
@@ -659,7 +669,7 @@ export default function Home() {
           <h2>Knihy</h2>
           <div className="row">
             <input
-              placeholder="Filter nazov/autor..."
+                placeholder="Filter názov/autor..."
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
             />
@@ -674,7 +684,7 @@ export default function Home() {
                 <tr>
                   <th>Názov</th>
                   <th>Autor</th>
-                  <th>Datum</th>
+                  <th>Dátum</th>
                   <th>Rating</th>
                   <th></th>
                 </tr>
@@ -705,7 +715,7 @@ export default function Home() {
                 ) : (
                   <tr>
                     <td colSpan={5} className="muted">
-                      Bez dat.
+                      Bez dát.
                     </td>
                   </tr>
                 )}
@@ -738,10 +748,10 @@ export default function Home() {
 
       <section className="two-col">
         <article className="card">
-          <h2>Citaty ku knihe</h2>
+          <h2>Citáty ku knihe</h2>
           <p className="muted">
             {selectedBook
-              ? `Vybrana kniha: ${selectedBook.title} (${selectedBook.author || "bez autora"})`
+              ? `Vybraná kniha: ${selectedBook.title} (${selectedBook.author || "bez autora"})`
               : "Najprv vyber knihu z tabuľky."}
           </p>
               {quotesLoading ? <p className="muted">Načítavam citáty...</p> : null}
@@ -779,7 +789,7 @@ export default function Home() {
             </div>
           ) : null}
 
-          <label>Citat *</label>
+          <label>Citát *</label>
           <textarea
             value={quoteForm.quote}
             onChange={(event) => setQuoteForm((prev) => ({ ...prev, quote: event.target.value }))}
@@ -828,7 +838,7 @@ export default function Home() {
             <table>
               <thead>
                 <tr>
-                  <th>Citat</th>
+                  <th>Citát</th>
                   <th>Strana</th>
                   <th>Tagy</th>
                   <th />

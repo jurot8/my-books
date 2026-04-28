@@ -96,7 +96,7 @@ export default function StatsPage() {
     <main className="container">
       <header className="header">
         <div>
-          <h1>Statistiky a grafy</h1>
+          <h1>Štatistiky</h1>
           <p className="muted">Prehľad čítania podľa rokov, mesiacov a autorov.</p>
         </div>
         <Link href="/" className="btn secondary link-btn">
