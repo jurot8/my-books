@@ -97,6 +97,29 @@ function sanitizeString(value: unknown): string {
   return String(value).trim();
 }
 
+function normalizeCbdbPath(value: string): string {
+  const raw = sanitizeString(value);
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(raw.startsWith("http") ? raw : `https://www.cbdb.cz${raw}`);
+    return parsed.pathname.replace(/\/+$/, "").toLowerCase();
+  } catch {
+    return raw.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function normalizeTitleForMatch(value: string): string {
+  return sanitizeString(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .toLowerCase();
+}
+
 function normalizeNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -691,8 +714,40 @@ export async function getSeriesProgress(bookId: string): Promise<SeriesProgress 
       const remoteSeries = await fetchCbdbSeriesFromBookUrl(selectedCbdbUrl);
       if (remoteSeries?.books.length) {
         const localByOrder = new Map(localSeriesItems.map((item) => [item.order, item]));
+        const localByCbdbPath = new Map<string, SeriesBookItem>();
+        const localByTitle = new Map<string, SeriesBookItem>();
+        const localCandidates: SeriesBookItem[] = books.map((book) => {
+          const info = parseSeriesInfo(book.title);
+          return {
+            id: book.id,
+            title: book.title,
+            author: book.author,
+            order: info?.order ?? -1,
+            finishedAt: book.finishedAt,
+            isRead: Boolean(sanitizeString(book.finishedAt)),
+            cbdbUrl: book.cbdbUrl,
+          } satisfies SeriesBookItem;
+        });
+
+        for (const localItem of localCandidates) {
+          const path = normalizeCbdbPath(localItem.cbdbUrl);
+          if (path) {
+            if (!localByCbdbPath.has(path) || localItem.isRead) {
+              localByCbdbPath.set(path, localItem);
+            }
+          }
+
+          const titleKey = normalizeTitleForMatch(localItem.title);
+          if (titleKey && (!localByTitle.has(titleKey) || localItem.isRead)) {
+            localByTitle.set(titleKey, localItem);
+          }
+        }
+
         const mergedItems = remoteSeries.books.map((remoteBook) => {
-          const local = localByOrder.get(remoteBook.order);
+          const local =
+            localByOrder.get(remoteBook.order) ??
+            localByCbdbPath.get(normalizeCbdbPath(remoteBook.url)) ??
+            localByTitle.get(normalizeTitleForMatch(remoteBook.title));
           return {
             id: local?.id ?? `cbdb-${remoteBook.order}`,
             title: remoteBook.title,

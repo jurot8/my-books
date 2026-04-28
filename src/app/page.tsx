@@ -653,7 +653,7 @@ export default function Home() {
             onChange={(event) => setBookForm((prev) => ({ ...prev, notes: event.target.value }))}
           />
 
-          <div className="row mt">
+          <div className="row mt form-actions-row">
             <button
               type="button"
               className="btn primary"
@@ -662,30 +662,29 @@ export default function Home() {
             >
               {saveBookLoading ? "Ukladám knihu..." : "Uložiť knihu"}
             </button>
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={enrichSelectedBookFromCbdb}
+              disabled={enrichBookLoading}
+              title="Doplniť metadáta z CBDB pre vybranú knihu"
+            >
+              {enrichBookLoading ? "Načítavam z CBDB..." : "Načítaj z CBDB"}
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => {
+                setBookForm(emptyBookForm);
+                setSelectedBookId("");
+                setQuotes([]);
+                setSeriesProgress(null);
+                setBookMessage(null);
+              }}
+            >
+              Nová kniha
+            </button>
           </div>
-
-          <button
-            type="button"
-            className="btn secondary mt"
-            onClick={enrichSelectedBookFromCbdb}
-            disabled={enrichBookLoading}
-            title="Doplniť metadáta z CBDB pre vybranú knihu"
-          >
-            {enrichBookLoading ? "Načítavam z CBDB..." : "Načítaj z CBDB"}
-          </button>
-          <button
-            type="button"
-            className="btn secondary mt"
-            onClick={() => {
-              setBookForm(emptyBookForm);
-              setSelectedBookId("");
-              setQuotes([]);
-              setSeriesProgress(null);
-              setBookMessage(null);
-            }}
-          >
-            Nová kniha
-          </button>
 
           <label className="mt">Ručné dohľadanie metadát z cbdb.cz</label>
           <div className="row">
@@ -770,7 +769,7 @@ export default function Home() {
             <button
               type="button"
               className="btn secondary compact"
-              disabled={booksPage.page <= 1}
+              disabled={listLoading || booksPage.page <= 1}
               onClick={() => void loadBooksPage(1, filter)}
             >
               Prvá
@@ -778,7 +777,7 @@ export default function Home() {
             <button
               type="button"
               className="btn secondary compact"
-              disabled={booksPage.page <= 1}
+              disabled={listLoading || booksPage.page <= 1}
               onClick={() => void loadBooksPage(booksPage.page - 1, filter)}
             >
               Predošlá
@@ -789,7 +788,7 @@ export default function Home() {
             <button
               type="button"
               className="btn secondary compact"
-              disabled={booksPage.page >= booksPage.totalPages}
+              disabled={listLoading || booksPage.page >= booksPage.totalPages}
               onClick={() => void loadBooksPage(booksPage.page + 1, filter)}
             >
               Ďalšia
@@ -797,12 +796,13 @@ export default function Home() {
             <button
               type="button"
               className="btn secondary compact"
-              disabled={booksPage.page >= booksPage.totalPages}
+              disabled={listLoading || booksPage.page >= booksPage.totalPages}
               onClick={() => void loadBooksPage(booksPage.totalPages, filter)}
             >
               Posledná
             </button>
           </div>
+          {listLoading ? <p className="muted small-text">Načítavam stránku...</p> : null}
         </article>
       </section>
 
