@@ -54,12 +54,13 @@ h2 {
 .account-panel {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 6px;
 }
 
 .header-btn {
-  min-width: 128px;
+  width: 148px;
+  justify-content: center;
 }
 
 .stats-grid {
@@ -268,6 +269,20 @@ th {
   border-radius: 8px;
   padding: 10px;
   background: #f8fafc;
+}
+
+.series-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.series-check,
+.series-check-empty {
+  display: inline-flex;
+  width: 18px;
+  justify-content: center;
 }
 
 .message-ok {

@@ -621,6 +621,34 @@ export default function Home() {
             }
           />
 
+          {seriesProgress ? (
+            <div className="series-box">
+              <p className="muted">
+                Séria: <strong>{seriesProgress.seriesName}</strong>
+              </p>
+              {seriesProgress.books.length ? (
+                seriesProgress.books.map((item) => (
+                  <div key={item.id} className="small-text series-item-row">
+                    <span className={item.isRead ? "series-check" : "series-check-empty"}>
+                      {item.isRead ? "✅" : ""}
+                    </span>
+                    {item.cbdbUrl ? (
+                      <a href={item.cbdbUrl} target="_blank" rel="noreferrer">
+                        {item.order}. {item.title}
+                      </a>
+                    ) : (
+                      <span>
+                        {item.order}. {item.title}
+                      </span>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="small-text muted">Nenašli sa diely série.</div>
+              )}
+            </div>
+          ) : null}
+
           <label>Poznámka</label>
           <textarea
             value={bookForm.notes}
@@ -799,40 +827,7 @@ export default function Home() {
               ? `Vybraná kniha: ${selectedBook.title} (${selectedBook.author || "bez autora"})`
               : "Najprv vyber knihu z tabuľky."}
           </p>
-              {quotesLoading ? <p className="muted">Načítavam citáty...</p> : null}
-          {seriesProgress ? (
-            <div className="series-box">
-              <p className="muted">
-                Séria: <strong>{seriesProgress.seriesName}</strong> (aktuálne diel {seriesProgress.currentOrder})
-              </p>
-              <div className="row">
-                <div>
-                  <label>Už prečítané v sérii</label>
-                  {seriesProgress.readBooks.length ? (
-                    seriesProgress.readBooks.map((item) => (
-                      <div key={item.id} className="small-text">
-                        {item.order}. {item.title}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="small-text muted">Zatiaľ bez prečítaných dielov.</div>
-                  )}
-                </div>
-                <div>
-                  <label>Nasledujúce diely</label>
-                  {seriesProgress.followingBooks.length ? (
-                    seriesProgress.followingBooks.map((item) => (
-                      <div key={item.id} className="small-text">
-                        {item.order}. {item.title} {item.isRead ? "(prečítané)" : "(čaká)"}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="small-text muted">Nenašli sa ďalšie diely v zozname.</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : null}
+          {quotesLoading ? <p className="muted">Načítavam citáty...</p> : null}
 
           <label>Citát *</label>
           <textarea

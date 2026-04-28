@@ -682,21 +682,15 @@ export async function getSeriesProgress(bookId: string): Promise<SeriesProgress 
         order: info.order,
         finishedAt: book.finishedAt,
         isRead: Boolean(sanitizeString(book.finishedAt)),
+        cbdbUrl: book.cbdbUrl,
       } satisfies SeriesBookItem;
     })
     .filter((item): item is SeriesBookItem => item !== null)
     .sort((a, b) => a.order - b.order);
 
-  const readSeriesBooks = seriesItems.filter(
-    (item) => item.order <= selectedSeries.order && item.isRead,
-  );
-  const followingBooks = seriesItems.filter((item) => item.order > selectedSeries.order);
-
   return {
     seriesName: selectedSeries.displayName,
-    currentOrder: selectedSeries.order,
-    readBooks: readSeriesBooks,
-    followingBooks,
+    books: seriesItems,
   };
 }
 

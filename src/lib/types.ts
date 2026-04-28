@@ -90,11 +90,10 @@ export type SeriesBookItem = {
   order: number;
   finishedAt: string;
   isRead: boolean;
+  cbdbUrl: string;
 };
 
 export type SeriesProgress = {
   seriesName: string;
-  currentOrder: number;
-  readBooks: SeriesBookItem[];
-  followingBooks: SeriesBookItem[];
+  books: SeriesBookItem[];
 };
