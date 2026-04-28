@@ -1,6 +1,6 @@
 import { google, sheets_v4 } from "googleapis";
 import { randomUUID } from "crypto";
-import { Book, BookInput, BootstrapData, Quote, QuoteInput, Stats } from "@/lib/types";
+import { Book, BookInput, BootstrapData, PagedBooks, Quote, QuoteInput, Stats } from "@/lib/types";
 
 const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? "";
 const booksSheetName = process.env.GOOGLE_SHEETS_BOOKS_SHEET ?? "Zoznam";
@@ -35,6 +35,11 @@ const metaColumns = [
 ] as const;
 
 type RowMap = Record<string, string | number>;
+
+type ParsedDate = {
+  year: string;
+  monthIndex: number;
+};
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -101,6 +106,34 @@ function extractYear(value: string): string {
   return "";
 }
 
+function parseDate(value: string): ParsedDate | null {
+  const text = sanitizeString(value);
+  if (!text) {
+    return null;
+  }
+
+  const fullMatch = text.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+  if (fullMatch) {
+    const month = Number(fullMatch[2]);
+    if (month >= 1 && month <= 12) {
+      return {
+        year: fullMatch[3],
+        monthIndex: month - 1,
+      };
+    }
+  }
+
+  const year = extractYear(text);
+  if (year) {
+    return {
+      year,
+      monthIndex: -1,
+    };
+  }
+
+  return null;
+}
+
 function toSortedPairs(source: Record<string, number>) {
   return Object.keys(source)
     .sort()
@@ -111,15 +144,22 @@ function toSortedPairs(source: Record<string, number>) {
 }
 
 function computeStats(books: Book[], quotes: Quote[]): Stats {
-  const ratedBooks = books.filter((book) => normalizeNumber(book.rating) > 0);
+  const readBooks = books.filter((book) => Boolean(sanitizeString(book.finishedAt)));
+  const ratedBooks = readBooks.filter((book) => normalizeNumber(book.rating) > 0);
   const byYear: Record<string, number> = {};
   const byAuthor: Record<string, number> = {};
   const byStatus: Record<string, number> = {};
+  const byMonthByYear: Record<string, number[]> = {};
   let totalPages = 0;
 
-  for (const book of books) {
-    const year = extractYear(book.finishedAt) || "Nezadane";
+  for (const book of readBooks) {
+    const parsedDate = parseDate(book.finishedAt);
+    const year = parsedDate?.year ?? "Nezadane";
     byYear[year] = (byYear[year] ?? 0) + 1;
+    byMonthByYear[year] = byMonthByYear[year] ?? Array(12).fill(0);
+    if (parsedDate && parsedDate.monthIndex >= 0) {
+      byMonthByYear[year][parsedDate.monthIndex] += 1;
+    }
 
     const author = sanitizeString(book.author) || "Neznamy autor";
     byAuthor[author] = (byAuthor[author] ?? 0) + 1;
@@ -135,14 +175,24 @@ function computeStats(books: Book[], quotes: Quote[]): Stats {
       ratedBooks.length
     : 0;
 
+  const currentYear = String(new Date().getFullYear());
+  const yearsForAverage = Object.keys(byYear).filter((year) => /^\d{4}$/.test(year));
+  const yearlyAverage = yearsForAverage.length
+    ? yearsForAverage.reduce((sum, year) => sum + byYear[year], 0) / yearsForAverage.length
+    : 0;
+
   return {
     totalBooks: books.length,
+    readBooks: readBooks.length,
     totalQuotes: quotes.length,
     totalPages,
     avgRating: Number(avgRating.toFixed(2)),
+    readThisYear: byYear[currentYear] ?? 0,
+    averagePerYear: Number(yearlyAverage.toFixed(2)),
     booksPerYear: toSortedPairs(byYear),
     booksPerAuthor: toSortedPairs(byAuthor),
     booksPerStatus: toSortedPairs(byStatus),
+    booksPerMonthByYear: byMonthByYear,
   };
 }
 
@@ -251,26 +301,43 @@ function rowFromBookId(bookId: string): number {
 
 async function readBooks(): Promise<Book[]> {
   const sheets = getSheetsClient();
-  const response = await sheets.spreadsheets.values.get({
+  const response = await sheets.spreadsheets.get({
     spreadsheetId,
-    range: `'${booksSheetName}'!A${booksStartRow}:D`,
+    ranges: [`'${booksSheetName}'!A${booksStartRow}:D`],
+    includeGridData: true,
+    fields:
+      "sheets(data(rowData(values(formattedValue,hyperlink,userEnteredValue.formulaValue))))",
   });
 
-  const values = response.data.values ?? [];
+  const rows = response.data.sheets?.[0]?.data?.[0]?.rowData ?? [];
   const metaMap = await readBookMetaMap();
 
-  return values
+  return rows
     .map((row, index): Book => {
       const rowNumber = booksStartRow + index;
       const id = bookIdFromRow(rowNumber);
       const meta = metaMap[id] ?? {};
+      const values = row.values ?? [];
+
+      const author = sanitizeString(values[0]?.formattedValue ?? "");
+      const title = sanitizeString(values[1]?.formattedValue ?? "");
+      const finishedAt = sanitizeString(values[2]?.formattedValue ?? "");
+      const notes = sanitizeString(values[3]?.formattedValue ?? "");
+
+      const titleHyperlink = sanitizeString(values[1]?.hyperlink ?? "");
+      const titleFormula = sanitizeString(values[1]?.userEnteredValue?.formulaValue ?? "");
+      const richTextLink = sanitizeString(values[1]?.textFormatRuns?.[0]?.format?.link?.uri ?? "");
+      const formulaLinkMatch = titleFormula.match(/HYPERLINK\(\s*"([^"]+)"/i);
+      const cbdbFromTitleCell =
+        titleHyperlink || richTextLink || sanitizeString(formulaLinkMatch?.[1]);
+      const cbdbFromMeta = sanitizeString(meta.cbdbUrl);
 
       return {
         id,
-        author: sanitizeString(row[0]),
-        title: sanitizeString(row[1]),
-        finishedAt: sanitizeString(row[2]),
-        notes: sanitizeString(row[3]),
+        author,
+        title,
+        finishedAt,
+        notes,
         status: sanitizeString(meta.status) || "read",
         startedAt: sanitizeString(meta.startedAt),
         rating: normalizeNumber(meta.rating),
@@ -279,12 +346,24 @@ async function readBooks(): Promise<Book[]> {
         publisher: sanitizeString(meta.publisher),
         isbn: sanitizeString(meta.isbn),
         language: sanitizeString(meta.language),
-        cbdbUrl: sanitizeString(meta.cbdbUrl),
+        cbdbUrl: cbdbFromMeta || cbdbFromTitleCell,
         updatedAt: sanitizeString(meta.updatedAt),
         createdAt: sanitizeString(meta.createdAt),
       };
     })
     .filter((book) => Boolean(book.title || book.author));
+}
+
+function sortBooksByDateDesc(books: Book[]): Book[] {
+  return [...books].sort((a, b) => {
+    const yearA = Number(extractYear(a.finishedAt) || "0");
+    const yearB = Number(extractYear(b.finishedAt) || "0");
+    if (yearA !== yearB) {
+      return yearB - yearA;
+    }
+
+    return b.id.localeCompare(a.id);
+  });
 }
 
 async function readQuotes(): Promise<Quote[]> {
@@ -394,7 +473,7 @@ async function upsertBookMeta(bookId: string, input: BookInput): Promise<void> {
   });
 }
 
-async function getBookById(bookId: string): Promise<Book> {
+export async function getBookById(bookId: string): Promise<Book> {
   const books = await readBooks();
   const found = books.find((book) => book.id === bookId);
   if (!found) {
@@ -417,6 +496,24 @@ function extractRowNumberFromRange(range?: string | null): number | null {
   return Number(match[1]);
 }
 
+function escapeFormulaText(value: string): string {
+  return sanitizeString(value).replace(/"/g, '""');
+}
+
+function toBookTitleCellValue(title: string, cbdbUrl: string): string {
+  const cleanTitle = sanitizeString(title);
+  const cleanUrl = sanitizeString(cbdbUrl);
+  if (!cleanTitle) {
+    return "";
+  }
+
+  if (!cleanUrl) {
+    return cleanTitle;
+  }
+
+  return `=HYPERLINK("${escapeFormulaText(cleanUrl)}","${escapeFormulaText(cleanTitle)}")`;
+}
+
 export async function getBootstrapData(): Promise<BootstrapData> {
   await ensureSchema();
   const books = await readBooks();
@@ -429,6 +526,56 @@ export async function getBootstrapData(): Promise<BootstrapData> {
   };
 }
 
+export async function getStatsData(): Promise<Stats> {
+  await ensureSchema();
+  const books = await readBooks();
+  const quotes = await readQuotes();
+  return computeStats(books, quotes);
+}
+
+export async function listBooksPage(
+  page: number,
+  pageSize: number,
+  filter: string,
+): Promise<PagedBooks> {
+  await ensureSchema();
+  const books = sortBooksByDateDesc(await readBooks());
+  const cleanFilter = sanitizeString(filter).toLowerCase();
+  const filtered = cleanFilter
+    ? books.filter((book) => {
+        const title = sanitizeString(book.title).toLowerCase();
+        const author = sanitizeString(book.author).toLowerCase();
+        return title.includes(cleanFilter) || author.includes(cleanFilter);
+      })
+    : books;
+
+  const safePageSize = Math.min(100, Math.max(5, pageSize || 25));
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / safePageSize));
+  const safePage = Math.min(totalPages, Math.max(1, page || 1));
+  const start = (safePage - 1) * safePageSize;
+  const items = filtered.slice(start, start + safePageSize);
+
+  return {
+    items,
+    total,
+    page: safePage,
+    pageSize: safePageSize,
+    totalPages,
+  };
+}
+
+export async function listQuotesByBookId(bookId: string): Promise<Quote[]> {
+  await ensureSchema();
+  const cleanBookId = sanitizeString(bookId);
+  if (!cleanBookId) {
+    return [];
+  }
+
+  const quotes = await readQuotes();
+  return quotes.filter((quote) => sanitizeString(quote.bookId) === cleanBookId);
+}
+
 export async function addBook(input: BookInput): Promise<Book> {
   await ensureSchema();
   if (!sanitizeString(input.title)) {
@@ -438,7 +585,7 @@ export async function addBook(input: BookInput): Promise<Book> {
   const sheets = getSheetsClient();
   const row = [
     sanitizeString(input.author),
-    sanitizeString(input.title),
+    toBookTitleCellValue(sanitizeString(input.title), sanitizeString(input.cbdbUrl)),
     sanitizeString(input.finishedAt),
     sanitizeString(input.notes),
   ];
@@ -467,29 +614,29 @@ export async function updateBook(bookId: string, patch: BookInput): Promise<Book
   const rowNumber = rowFromBookId(bookId);
   const sheets = getSheetsClient();
 
-  const current = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `'${booksSheetName}'!A${rowNumber}:D${rowNumber}`,
-  });
+  const currentBook = await getBookById(bookId);
+  const nextAuthor = Object.prototype.hasOwnProperty.call(patch, "author")
+    ? sanitizeString(patch.author)
+    : currentBook.author;
+  const nextTitle = Object.prototype.hasOwnProperty.call(patch, "title")
+    ? sanitizeString(patch.title)
+    : currentBook.title;
+  const nextDate = Object.prototype.hasOwnProperty.call(patch, "finishedAt")
+    ? sanitizeString(patch.finishedAt)
+    : currentBook.finishedAt;
+  const nextNotes = Object.prototype.hasOwnProperty.call(patch, "notes")
+    ? sanitizeString(patch.notes)
+    : currentBook.notes;
+  const nextCbdbUrl = Object.prototype.hasOwnProperty.call(patch, "cbdbUrl")
+    ? sanitizeString(patch.cbdbUrl)
+    : currentBook.cbdbUrl;
 
-  const currentRow = current.data.values?.[0];
-  if (!currentRow) {
-    throw new Error(`Book ${bookId} was not found.`);
-  }
-
-  const updated = [...currentRow];
-  if (Object.prototype.hasOwnProperty.call(patch, "author")) {
-    updated[0] = sanitizeString(patch.author);
-  }
-  if (Object.prototype.hasOwnProperty.call(patch, "title")) {
-    updated[1] = sanitizeString(patch.title);
-  }
-  if (Object.prototype.hasOwnProperty.call(patch, "finishedAt")) {
-    updated[2] = sanitizeString(patch.finishedAt);
-  }
-  if (Object.prototype.hasOwnProperty.call(patch, "notes")) {
-    updated[3] = sanitizeString(patch.notes);
-  }
+  const updated = [
+    nextAuthor,
+    toBookTitleCellValue(nextTitle, nextCbdbUrl),
+    nextDate,
+    nextNotes,
+  ];
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
@@ -502,6 +649,46 @@ export async function updateBook(bookId: string, patch: BookInput): Promise<Book
 
   await upsertBookMeta(bookId, patch);
   return getBookById(bookId);
+}
+
+export async function enrichBookFromMetadata(
+  bookId: string,
+  metadata: {
+    canonicalUrl?: string;
+    author?: string;
+    isbn?: string;
+    pages?: number;
+    publisher?: string;
+    description?: string;
+  },
+): Promise<Book> {
+  const book = await getBookById(bookId);
+  const patch: BookInput = {};
+
+  if (!book.cbdbUrl && sanitizeString(metadata.canonicalUrl)) {
+    patch.cbdbUrl = sanitizeString(metadata.canonicalUrl);
+  }
+  if (!book.author && sanitizeString(metadata.author)) {
+    patch.author = sanitizeString(metadata.author);
+  }
+  if (!book.isbn && sanitizeString(metadata.isbn)) {
+    patch.isbn = sanitizeString(metadata.isbn);
+  }
+  if (!book.pages && normalizeNumber(metadata.pages) > 0) {
+    patch.pages = normalizeNumber(metadata.pages);
+  }
+  if (!book.publisher && sanitizeString(metadata.publisher)) {
+    patch.publisher = sanitizeString(metadata.publisher);
+  }
+  if (!book.notes && sanitizeString(metadata.description)) {
+    patch.notes = sanitizeString(metadata.description);
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return book;
+  }
+
+  return updateBook(bookId, patch);
 }
 
 export async function addQuote(input: QuoteInput): Promise<Quote> {

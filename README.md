@@ -62,6 +62,28 @@ npm run dev
    URI.
 6. Redeploy.
 
+## Automaticky deployment cez GitHub Actions
+
+Workflow je v `.github/workflows/vercel-deploy.yml`:
+- PR -> Vercel Preview deploy
+- push do `master` -> Vercel Production deploy
+
+V GitHub repo nastav tieto **Actions secrets**:
+- `VERCEL_TOKEN`
+- `VERCEL_ORG_ID`
+- `VERCEL_PROJECT_ID`
+
+Ako ziskat hodnoty:
+1. `VERCEL_TOKEN`: Vercel -> **Settings -> Tokens -> Create Token**
+2. `VERCEL_ORG_ID` a `VERCEL_PROJECT_ID`:
+   - v root priecinku projektu spusti:
+     ```bash
+     npx vercel link
+     ```
+   - potom otvor `.vercel/project.json` a skopiruj:
+     - `orgId` -> `VERCEL_ORG_ID`
+     - `projectId` -> `VERCEL_PROJECT_ID`
+
 ## Scripts
 
 ```bash

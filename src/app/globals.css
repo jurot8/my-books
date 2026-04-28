@@ -138,6 +138,8 @@ textarea {
   border: none;
   cursor: pointer;
   font-weight: 600;
+  text-decoration: none;
+  text-align: center;
 }
 
 .btn.primary {
@@ -158,6 +160,12 @@ textarea {
 .btn.compact {
   width: auto;
   padding: 6px 10px;
+}
+
+.btn.link-btn {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
 }
 
 table {
@@ -192,6 +200,19 @@ th {
   gap: 6px;
 }
 
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.pagination-row {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
 .message-ok {
   color: #166534;
   margin-top: 10px;
@@ -202,6 +223,10 @@ th {
   margin-top: 10px;
 }
 
+.small-text {
+  font-size: 12px;
+}
+
 .pair-row {
   display: flex;
   justify-content: space-between;
@@ -210,8 +235,125 @@ th {
   margin-top: 6px;
 }
 
+.suggestions {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  margin-top: 6px;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.suggestion-item {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: none;
+  border-bottom: 1px solid #f1f5f9;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.suggestion-item:hover {
+  background: #f8fafc;
+}
+
+.chart-list {
+  display: grid;
+  gap: 10px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-label,
+.chart-value {
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.chart-bar-wrap {
+  width: 100%;
+  height: 14px;
+  background: #eef2ff;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.chart-bar {
+  height: 100%;
+  background: #4f46e5;
+  border-radius: 999px;
+}
+
+.chart-grid-months {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(24px, 1fr));
+  gap: 8px;
+}
+
+.month-bar-column {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.month-bar-wrap {
+  width: 100%;
+  height: 140px;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.month-bar {
+  width: 100%;
+  max-width: 18px;
+  background: #2563eb;
+  border-radius: 6px;
+}
+
 @media (max-width: 1024px) {
   .two-col {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 12px;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .row {
+    flex-direction: column;
+  }
+
+  .pagination-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

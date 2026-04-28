@@ -1,8 +1,9 @@
 "use client";
 
-import { BootstrapData, Book, Quote, Stats } from "@/lib/types";
+import { Book, CbdbMetadata, CbdbSuggestion, PagedBooks, Quote, Stats } from "@/lib/types";
+import Link from "next/link";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Message = {
   text: string;
@@ -11,43 +12,57 @@ type Message = {
 
 const emptyStats: Stats = {
   totalBooks: 0,
+  readBooks: 0,
   totalQuotes: 0,
   totalPages: 0,
   avgRating: 0,
+  readThisYear: 0,
+  averagePerYear: 0,
   booksPerYear: [],
   booksPerAuthor: [],
   booksPerStatus: [],
+  booksPerMonthByYear: {},
 };
+
+const emptyBookForm = {
+  id: "",
+  title: "",
+  author: "",
+  status: "read",
+  startedAt: "",
+  finishedAt: "",
+  rating: "",
+  pages: "",
+  genre: "",
+  publisher: "",
+  isbn: "",
+  language: "",
+  notes: "",
+  cbdbUrl: "",
+};
+
+const pageSize = 25;
 
 export default function Home() {
   const { status, data: session } = useSession();
-  const [loading, setLoading] = useState(true);
-  const [books, setBooks] = useState<Book[]>([]);
-  const [quotes, setQuotes] = useState<Quote[]>([]);
   const [stats, setStats] = useState<Stats>(emptyStats);
-  const [selectedBookId, setSelectedBookId] = useState<string>("");
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
+  const [booksPage, setBooksPage] = useState<PagedBooks>({
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize,
+    totalPages: 1,
+  });
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [quotesLoading, setQuotesLoading] = useState(false);
+  const [selectedBookId, setSelectedBookId] = useState("");
   const [filter, setFilter] = useState("");
   const [bookMessage, setBookMessage] = useState<Message | null>(null);
   const [quoteMessage, setQuoteMessage] = useState<Message | null>(null);
-  const [cbdbResult, setCbdbResult] = useState<string>("");
-
-  const [bookForm, setBookForm] = useState({
-    id: "",
-    title: "",
-    author: "",
-    status: "read",
-    startedAt: "",
-    finishedAt: "",
-    rating: "",
-    pages: "",
-    genre: "",
-    publisher: "",
-    isbn: "",
-    language: "",
-    notes: "",
-    cbdbUrl: "",
-  });
-
+  const [cbdbResult, setCbdbResult] = useState("");
+  const [bookForm, setBookForm] = useState(emptyBookForm);
   const [quoteForm, setQuoteForm] = useState({
     id: "",
     quote: "",
@@ -55,100 +70,128 @@ export default function Home() {
     context: "",
     tags: "",
   });
-
   const [cbdbQuery, setCbdbQuery] = useState("");
+  const [titleSuggestions, setTitleSuggestions] = useState<CbdbSuggestion[]>([]);
+  const [titleSuggestLoading, setTitleSuggestLoading] = useState(false);
+
+  const selectedBook = useMemo(
+    () => booksPage.items.find((book) => book.id === selectedBookId) ?? null,
+    [booksPage.items, selectedBookId],
+  );
+
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const response = await fetch("/api/stats");
+      const data = (await response.json()) as { stats?: Stats; error?: string };
+      if (!response.ok || !data.stats) {
+        throw new Error(data.error ?? "Load failed.");
+      }
+
+      setStats(data.stats);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Load failed.";
+      setBookMessage({ ok: false, text: message });
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
+  const loadBooksPage = useCallback(async (page: number, query: string) => {
+    setListLoading(true);
+    try {
+      const response = await fetch(
+        `/api/books?page=${page}&pageSize=${pageSize}&filter=${encodeURIComponent(query)}`,
+      );
+      const data = (await response.json()) as PagedBooks | { error?: string };
+      if (!response.ok) {
+        throw new Error("error" in data ? data.error : "Load failed.");
+      }
+
+      setBooksPage(data as PagedBooks);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Load failed.";
+      setBookMessage({ ok: false, text: message });
+    } finally {
+      setListLoading(false);
+    }
+  }, []);
+
+  const loadQuotes = useCallback(async (bookId: string) => {
+    if (!bookId) {
+      setQuotes([]);
+      return;
+    }
+
+    setQuotesLoading(true);
+    try {
+      const response = await fetch(`/api/quotes?bookId=${encodeURIComponent(bookId)}`);
+      const data = (await response.json()) as { items?: Quote[]; error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Load failed.");
+      }
+
+      setQuotes(data.items ?? []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Load failed.";
+      setQuoteMessage({ ok: false, text: message });
+    } finally {
+      setQuotesLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (status !== "authenticated") {
       return;
     }
 
-    fetch("/api/bootstrap")
-      .then(async (response) => {
+    const timer = window.setTimeout(() => {
+      void loadStats();
+      void loadBooksPage(1, "");
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadBooksPage, loadStats, status]);
+
+  useEffect(() => {
+    const query = bookForm.title.trim();
+    if (query.length < 2) {
+      const timer = window.setTimeout(() => setTitleSuggestions([]), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      setTitleSuggestLoading(true);
+      try {
+        const response = await fetch(`/api/cbdb?mode=search&q=${encodeURIComponent(query)}`);
+        const data = (await response.json()) as { suggestions?: CbdbSuggestion[]; error?: string };
         if (!response.ok) {
-          const error = (await response.json()) as { error?: string };
-          throw new Error(error.error ?? "Load failed.");
+          throw new Error(data.error ?? "CBDB search failed.");
         }
 
-        return (await response.json()) as BootstrapData;
-      })
-      .then((data) => {
-        setBooks(data.books);
-        setQuotes(data.quotes);
-        setStats(data.stats);
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "Load failed.";
-        setBookMessage({ ok: false, text: message });
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [status]);
+        if (!cancelled) {
+          setTitleSuggestions(data.suggestions ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setTitleSuggestions([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setTitleSuggestLoading(false);
+        }
+      }
+    }, 300);
 
-  const selectedBook = useMemo(
-    () => books.find((book) => book.id === selectedBookId) ?? null,
-    [books, selectedBookId],
-  );
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [bookForm.title]);
 
-  const filteredBooks = useMemo(() => {
-    const query = filter.trim().toLowerCase();
-    if (!query) {
-      return books;
-    }
-
-    return books.filter((book) => {
-      const title = book.title.toLowerCase();
-      const author = book.author.toLowerCase();
-      return title.includes(query) || author.includes(query);
-    });
-  }, [books, filter]);
-
-  const selectedQuotes = useMemo(
-    () => quotes.filter((quote) => quote.bookId === selectedBookId),
-    [quotes, selectedBookId],
-  );
-
-  function refreshLocalStats(nextBooks: Book[], nextQuotes: Quote[]) {
-    const byYear: Record<string, number> = {};
-    const byAuthor: Record<string, number> = {};
-    const byStatus: Record<string, number> = {};
-    let totalPages = 0;
-
-    const rated = nextBooks.filter((book) => Number(book.rating) > 0);
-    for (const book of nextBooks) {
-      const finishedAt = String(book.finishedAt ?? "");
-      const year = finishedAt.match(/(\d{4})/)?.[1] ?? "Nezadane";
-      byYear[year] = (byYear[year] ?? 0) + 1;
-
-      const author = book.author || "Neznamy autor";
-      byAuthor[author] = (byAuthor[author] ?? 0) + 1;
-
-      const statusValue = book.status || "unknown";
-      byStatus[statusValue] = (byStatus[statusValue] ?? 0) + 1;
-
-      totalPages += Number(book.pages) || 0;
-    }
-
-    const avgRating = rated.length
-      ? rated.reduce((sum, book) => sum + (Number(book.rating) || 0), 0) /
-        rated.length
-      : 0;
-
-    const toPairs = (source: Record<string, number>) =>
-      Object.keys(source)
-        .sort()
-        .map((key) => ({ key, value: source[key] }));
-
-    setStats({
-      totalBooks: nextBooks.length,
-      totalQuotes: nextQuotes.length,
-      totalPages,
-      avgRating: Number(avgRating.toFixed(2)),
-      booksPerYear: toPairs(byYear),
-      booksPerAuthor: toPairs(byAuthor),
-      booksPerStatus: toPairs(byStatus),
-    });
+  async function refreshAfterBookChange() {
+    await Promise.all([loadStats(), loadBooksPage(booksPage.page, filter)]);
   }
 
   async function saveBook() {
@@ -184,15 +227,14 @@ export default function Home() {
         throw new Error("error" in data ? data.error : "Save failed.");
       }
 
-      const book = data as Book;
-      const nextBooks = bookForm.id
-        ? books.map((item) => (item.id === book.id ? book : item))
-        : [...books, book];
-      setBooks(nextBooks);
-      setSelectedBookId(book.id);
-      refreshLocalStats(nextBooks, quotes);
+      const savedBook = data as Book;
+      setSelectedBookId(savedBook.id);
+      setBookForm((prev) => ({ ...prev, id: savedBook.id }));
+      setTitleSuggestions([]);
+      await refreshAfterBookChange();
+      await loadQuotes(savedBook.id);
       setBookMessage({ ok: true, text: "Kniha ulozena." });
-    } catch (error: unknown) {
+    } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
       setBookMessage({ ok: false, text: message });
     }
@@ -228,15 +270,10 @@ export default function Home() {
         throw new Error("error" in data ? data.error : "Save failed.");
       }
 
-      const quote = data as Quote;
-      const nextQuotes = quoteForm.id
-        ? quotes.map((item) => (item.id === quote.id ? quote : item))
-        : [...quotes, quote];
-      setQuotes(nextQuotes);
-      refreshLocalStats(books, nextQuotes);
       setQuoteForm({ id: "", quote: "", page: "", context: "", tags: "" });
+      await Promise.all([loadStats(), loadQuotes(selectedBookId)]);
       setQuoteMessage({ ok: true, text: "Citat ulozeny." });
-    } catch (error: unknown) {
+    } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
       setQuoteMessage({ ok: false, text: message });
     }
@@ -244,19 +281,14 @@ export default function Home() {
 
   async function removeQuote(id: string) {
     try {
-      const response = await fetch(`/api/quotes/${id}`, {
-        method: "DELETE",
-      });
-
-      const data = (await response.json()) as { ok?: boolean; error?: string };
+      const response = await fetch(`/api/quotes/${id}`, { method: "DELETE" });
+      const data = (await response.json()) as { error?: string };
       if (!response.ok) {
         throw new Error(data.error ?? "Delete failed.");
       }
 
-      const nextQuotes = quotes.filter((quote) => quote.id !== id);
-      setQuotes(nextQuotes);
-      refreshLocalStats(books, nextQuotes);
-    } catch (error: unknown) {
+      await Promise.all([loadStats(), loadQuotes(selectedBookId)]);
+    } catch (error) {
       const message = error instanceof Error ? error.message : "Delete failed.";
       setQuoteMessage({ ok: false, text: message });
     }
@@ -266,40 +298,67 @@ export default function Home() {
     setCbdbResult("Nacitavam...");
     try {
       const response = await fetch(`/api/cbdb?q=${encodeURIComponent(cbdbQuery)}`);
-      const data = (await response.json()) as {
-        error?: string;
-        pageTitle?: string;
-        description?: string;
-        canonicalUrl?: string;
-      };
-
+      const data = (await response.json()) as CbdbMetadata | { error?: string };
       if (!response.ok) {
-        throw new Error(data.error ?? "CBDB lookup failed.");
+        throw new Error("error" in data ? data.error : "CBDB lookup failed.");
       }
 
+      const metadata = data as CbdbMetadata;
       const output = [
-        data.pageTitle ? `Nazov: ${data.pageTitle}` : "",
-        data.description ? `Popis: ${data.description}` : "",
-        data.canonicalUrl ? `URL: ${data.canonicalUrl}` : "",
+        metadata.pageTitle ? `Nazov: ${metadata.pageTitle}` : "",
+        metadata.author ? `Autor: ${metadata.author}` : "",
+        metadata.publisher ? `Vydavatel: ${metadata.publisher}` : "",
+        metadata.pages ? `Pocet stran: ${metadata.pages}` : "",
+        metadata.isbn ? `ISBN: ${metadata.isbn}` : "",
+        metadata.description ? `Popis: ${metadata.description}` : "",
+        metadata.canonicalUrl ? `URL: ${metadata.canonicalUrl}` : "",
       ]
         .filter(Boolean)
         .join("\n");
 
       setCbdbResult(output || "Bez vysledku.");
-      if (!bookForm.title && data.pageTitle) {
-        setBookForm((prev) => ({ ...prev, title: data.pageTitle ?? prev.title }));
-      }
-      if (!bookForm.cbdbUrl && data.canonicalUrl) {
-        setBookForm((prev) => ({ ...prev, cbdbUrl: data.canonicalUrl ?? prev.cbdbUrl }));
-      }
-    } catch (error: unknown) {
+      setBookForm((prev) => ({
+        ...prev,
+        title: prev.title || metadata.pageTitle || "",
+        author: prev.author || metadata.author || "",
+        publisher: prev.publisher || metadata.publisher || "",
+        isbn: prev.isbn || metadata.isbn || "",
+        pages: prev.pages || (metadata.pages ? String(metadata.pages) : ""),
+        cbdbUrl: prev.cbdbUrl || metadata.canonicalUrl || "",
+      }));
+    } catch (error) {
       const message = error instanceof Error ? error.message : "CBDB lookup failed.";
       setCbdbResult(`Chyba: ${message}`);
     }
   }
 
+  async function enrichSelectedBookFromCbdb() {
+    if (!selectedBookId) {
+      setBookMessage({ ok: false, text: "Najprv vyber knihu." });
+      return;
+    }
+
+    setBookMessage(null);
+    try {
+      const response = await fetch(`/api/books/${selectedBookId}/enrich`, {
+        method: "POST",
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Metadata enrich failed.");
+      }
+
+      await Promise.all([refreshAfterBookChange(), loadQuotes(selectedBookId)]);
+      setBookMessage({ ok: true, text: "Metadata z CBDB doplnene." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Metadata enrich failed.";
+      setBookMessage({ ok: false, text: message });
+    }
+  }
+
   function selectBook(book: Book) {
     setSelectedBookId(book.id);
+    setTitleSuggestions([]);
     setQuoteForm({ id: "", quote: "", page: "", context: "", tags: "" });
     setBookForm({
       id: book.id,
@@ -317,6 +376,7 @@ export default function Home() {
       notes: book.notes || "",
       cbdbUrl: book.cbdbUrl || "",
     });
+    void loadQuotes(book.id);
   }
 
   if (status === "loading") {
@@ -345,6 +405,9 @@ export default function Home() {
           <p className="muted">Prehlad knih, citatov a statistik nad Google Sheets.</p>
         </div>
         <div className="header-actions">
+          <Link href="/stats" className="btn secondary link-btn">
+            Statistiky a grafy
+          </Link>
           <span className="badge">{session?.user?.email}</span>
           <button type="button" className="btn secondary" onClick={() => signOut()}>
             Odhlasit
@@ -352,16 +415,18 @@ export default function Home() {
         </div>
       </header>
 
-      {loading ? <div className="card">Nacitavam data...</div> : null}
-
       <section className="stats-grid">
         <article className="card">
-          <div className="muted">Knihy</div>
-          <div className="stat-number">{stats.totalBooks}</div>
+          <div className="muted">Precitane knihy</div>
+          <div className="stat-number">{stats.readBooks}</div>
         </article>
         <article className="card">
-          <div className="muted">Citaty</div>
-          <div className="stat-number">{stats.totalQuotes}</div>
+          <div className="muted">Precitane tento rok</div>
+          <div className="stat-number">{stats.readThisYear}</div>
+        </article>
+        <article className="card">
+          <div className="muted">Rocny priemer</div>
+          <div className="stat-number">{stats.averagePerYear}</div>
         </article>
         <article className="card">
           <div className="muted">Priemerne hodnotenie</div>
@@ -369,15 +434,42 @@ export default function Home() {
         </article>
       </section>
 
+      {statsLoading ? <div className="card muted">Nacitavam statistiky...</div> : null}
+
       <section className="two-col">
         <article className="card">
           <h2>Pridat / upravit knihu</h2>
-
           <label>Nazov *</label>
           <input
             value={bookForm.title}
             onChange={(event) => setBookForm((prev) => ({ ...prev, title: event.target.value }))}
           />
+          <div className="muted small-text">
+            {titleSuggestLoading ? "Hladam na CBDB..." : "Pri pisani sa automaticky hlada na CBDB."}
+          </div>
+          {titleSuggestions.length > 0 ? (
+            <div className="suggestions">
+              {titleSuggestions.map((item) => (
+                <button
+                  key={item.url}
+                  type="button"
+                  className="suggestion-item"
+                  onClick={() => {
+                    setBookForm((prev) => ({
+                      ...prev,
+                      title: item.title || prev.title,
+                      author: item.author || prev.author,
+                      cbdbUrl: item.url || prev.cbdbUrl,
+                    }));
+                    setTitleSuggestions([]);
+                  }}
+                >
+                  <strong>{item.title}</strong>
+                  <span className="muted">{item.url}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           <label>Autor</label>
           <input
@@ -425,7 +517,7 @@ export default function Home() {
               />
             </div>
             <div>
-              <label>Dokoncenie</label>
+              <label>Datum precitania</label>
               <input
                 placeholder="napr. 29.5.2020"
                 value={bookForm.finishedAt}
@@ -435,49 +527,6 @@ export default function Home() {
               />
             </div>
           </div>
-
-          <div className="row">
-            <div>
-              <label>Pocet stran</label>
-              <input
-                type="number"
-                min="0"
-                value={bookForm.pages}
-                onChange={(event) =>
-                  setBookForm((prev) => ({ ...prev, pages: event.target.value }))
-                }
-              />
-            </div>
-            <div>
-              <label>Jazyk</label>
-              <input
-                value={bookForm.language}
-                onChange={(event) =>
-                  setBookForm((prev) => ({ ...prev, language: event.target.value }))
-                }
-              />
-            </div>
-          </div>
-
-          <label>Zaner</label>
-          <input
-            value={bookForm.genre}
-            onChange={(event) => setBookForm((prev) => ({ ...prev, genre: event.target.value }))}
-          />
-
-          <label>Vydavatel</label>
-          <input
-            value={bookForm.publisher}
-            onChange={(event) =>
-              setBookForm((prev) => ({ ...prev, publisher: event.target.value }))
-            }
-          />
-
-          <label>ISBN</label>
-          <input
-            value={bookForm.isbn}
-            onChange={(event) => setBookForm((prev) => ({ ...prev, isbn: event.target.value }))}
-          />
 
           <label>CBDB URL</label>
           <input
@@ -500,30 +549,21 @@ export default function Home() {
             <button
               type="button"
               className="btn secondary"
-              onClick={() =>
-                setBookForm({
-                  id: "",
-                  title: "",
-                  author: "",
-                  status: "read",
-                  startedAt: "",
-                  finishedAt: "",
-                  rating: "",
-                  pages: "",
-                  genre: "",
-                  publisher: "",
-                  isbn: "",
-                  language: "",
-                  notes: "",
-                  cbdbUrl: "",
-                })
-              }
+              onClick={() => {
+                setBookForm(emptyBookForm);
+                setSelectedBookId("");
+                setQuotes([]);
+              }}
             >
               Vycistit
             </button>
           </div>
 
-          <label className="mt">Dotiahnut metadata z cbdb.cz</label>
+          <button type="button" className="btn secondary mt" onClick={enrichSelectedBookFromCbdb}>
+            Doplni metadata z CBDB pre vybratu knihu
+          </button>
+
+          <label className="mt">Rucne dohladanie metadat z cbdb.cz</label>
           <div className="row">
             <input
               value={cbdbQuery}
@@ -535,53 +575,83 @@ export default function Home() {
             </button>
           </div>
           <pre className="muted pre-wrap">{cbdbResult}</pre>
-
           {bookMessage ? (
-            <p className={bookMessage.ok ? "message-ok" : "message-error"}>
-              {bookMessage.text}
-            </p>
+            <p className={bookMessage.ok ? "message-ok" : "message-error"}>{bookMessage.text}</p>
           ) : null}
         </article>
 
         <article className="card">
           <h2>Knihy</h2>
-          <input
-            placeholder="Filter nazov/autor..."
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-          <table>
-            <thead>
-              <tr>
-                <th>Nazov</th>
-                <th>Autor</th>
-                <th>Stav</th>
-                <th>Rating</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredBooks.length ? (
-                filteredBooks.map((book) => (
-                  <tr
-                    key={book.id}
-                    className="clickable"
-                    onClick={() => selectBook(book)}
-                  >
-                    <td>{book.title}</td>
-                    <td>{book.author}</td>
-                    <td>{book.status}</td>
-                    <td>{book.rating || ""}</td>
-                  </tr>
-                ))
-              ) : (
+          <div className="row">
+            <input
+              placeholder="Filter nazov/autor..."
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+            <button type="button" className="btn secondary" onClick={() => void loadBooksPage(1, filter)}>
+              Hladat
+            </button>
+          </div>
+          {listLoading ? <p className="muted">Nacitavam zoznam...</p> : null}
+          <div className="table-scroll">
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={4} className="muted">
-                    Bez dat.
-                  </td>
+                  <th>Nazov</th>
+                  <th>Autor</th>
+                  <th>Datum</th>
+                  <th>Rating</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {booksPage.items.length ? (
+                  booksPage.items.map((book) => (
+                    <tr key={book.id} className="clickable" onClick={() => selectBook(book)}>
+                      <td>
+                        {book.cbdbUrl ? (
+                          <a href={book.cbdbUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                            {book.title}
+                          </a>
+                        ) : (
+                          book.title
+                        )}
+                      </td>
+                      <td>{book.author}</td>
+                      <td>{book.finishedAt}</td>
+                      <td>{book.rating || ""}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      Bez dat.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="pagination-row">
+            <button
+              type="button"
+              className="btn secondary compact"
+              disabled={booksPage.page <= 1}
+              onClick={() => void loadBooksPage(booksPage.page - 1, filter)}
+            >
+              Predosla
+            </button>
+            <span className="muted small-text">
+              Strana {booksPage.page} / {booksPage.totalPages} ({booksPage.total} knih)
+            </span>
+            <button
+              type="button"
+              className="btn secondary compact"
+              disabled={booksPage.page >= booksPage.totalPages}
+              onClick={() => void loadBooksPage(booksPage.page + 1, filter)}
+            >
+              Dalsia
+            </button>
+          </div>
         </article>
       </section>
 
@@ -593,13 +663,13 @@ export default function Home() {
               ? `Vybrana kniha: ${selectedBook.title} (${selectedBook.author || "bez autora"})`
               : "Najprv vyber knihu z tabulky."}
           </p>
+          {quotesLoading ? <p className="muted">Nacitavam citaty...</p> : null}
 
           <label>Citat *</label>
           <textarea
             value={quoteForm.quote}
             onChange={(event) => setQuoteForm((prev) => ({ ...prev, quote: event.target.value }))}
           />
-
           <div className="row">
             <div>
               <label>Strana</label>
@@ -616,15 +686,11 @@ export default function Home() {
               />
             </div>
           </div>
-
           <label>Kontext</label>
           <textarea
             value={quoteForm.context}
-            onChange={(event) =>
-              setQuoteForm((prev) => ({ ...prev, context: event.target.value }))
-            }
+            onChange={(event) => setQuoteForm((prev) => ({ ...prev, context: event.target.value }))}
           />
-
           <div className="row mt">
             <button type="button" className="btn primary" onClick={saveQuote}>
               Ulozit citat
@@ -637,92 +703,63 @@ export default function Home() {
               Vycistit
             </button>
           </div>
-
           {quoteMessage ? (
-            <p className={quoteMessage.ok ? "message-ok" : "message-error"}>
-              {quoteMessage.text}
-            </p>
+            <p className={quoteMessage.ok ? "message-ok" : "message-error"}>{quoteMessage.text}</p>
           ) : null}
         </article>
 
         <article className="card">
           <h2>Zoznam citatov</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Citat</th>
-                <th>Strana</th>
-                <th>Tagy</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {selectedQuotes.length ? (
-                selectedQuotes.map((quote) => (
-                  <tr key={quote.id}>
-                    <td>{quote.quote}</td>
-                    <td>{quote.page}</td>
-                    <td>{quote.tags}</td>
-                    <td className="actions">
-                      <button
-                        type="button"
-                        className="btn secondary compact"
-                        onClick={() =>
-                          setQuoteForm({
-                            id: quote.id,
-                            quote: quote.quote,
-                            page: quote.page,
-                            context: quote.context,
-                            tags: quote.tags,
-                          })
-                        }
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="btn danger compact"
-                        onClick={() => removeQuote(quote.id)}
-                      >
-                        X
-                      </button>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Citat</th>
+                  <th>Strana</th>
+                  <th>Tagy</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {quotes.length ? (
+                  quotes.map((quote) => (
+                    <tr key={quote.id}>
+                      <td>{quote.quote}</td>
+                      <td>{quote.page}</td>
+                      <td>{quote.tags}</td>
+                      <td className="actions">
+                        <button
+                          type="button"
+                          className="btn secondary compact"
+                          onClick={() =>
+                            setQuoteForm({
+                              id: quote.id,
+                              quote: quote.quote,
+                              page: quote.page,
+                              context: quote.context,
+                              tags: quote.tags,
+                            })
+                          }
+                        >
+                          Edit
+                        </button>
+                        <button type="button" className="btn danger compact" onClick={() => removeQuote(quote.id)}>
+                          X
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      Bez citatov.
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4} className="muted">
-                    Bez citatov.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
         </article>
-      </section>
-
-      <section className="card">
-        <h2>Statistiky</h2>
-        <div className="two-col">
-          <div>
-            <p className="muted">Knihy podla roku</p>
-            {stats.booksPerYear.map((item) => (
-              <div key={item.key} className="pair-row">
-                <span>{item.key}</span>
-                <span className="badge">{item.value}</span>
-              </div>
-            ))}
-          </div>
-          <div>
-            <p className="muted">Top autori</p>
-            {stats.booksPerAuthor.slice(-10).map((item) => (
-              <div key={item.key} className="pair-row">
-                <span>{item.key}</span>
-                <span className="badge">{item.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
       </section>
     </main>
   );

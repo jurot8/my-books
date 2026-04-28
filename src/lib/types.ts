@@ -39,16 +39,46 @@ export type StatsPair = {
 
 export type Stats = {
   totalBooks: number;
+  readBooks: number;
   totalQuotes: number;
   totalPages: number;
   avgRating: number;
+  readThisYear: number;
+  averagePerYear: number;
   booksPerYear: StatsPair[];
   booksPerAuthor: StatsPair[];
   booksPerStatus: StatsPair[];
+  booksPerMonthByYear: Record<string, number[]>;
 };
 
 export type BootstrapData = {
   books: Book[];
   quotes: Quote[];
   stats: Stats;
+};
+
+export type PagedBooks = {
+  items: Book[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+export type CbdbSuggestion = {
+  title: string;
+  author: string;
+  url: string;
+};
+
+export type CbdbMetadata = {
+  source: "cbdb.cz";
+  inputUrl: string;
+  pageTitle: string;
+  description: string;
+  canonicalUrl: string;
+  author: string;
+  isbn: string;
+  pages: number;
+  publisher: string;
 };
