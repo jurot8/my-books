@@ -50,6 +50,7 @@ const emptyBookForm = {
 };
 
 const pageSize = 25;
+const seriesTitleSuffixPattern = /\(([^()]*?)\s+(\d+)\)\s*$/;
 
 export default function Home() {
   const { status, data: session } = useSession();
@@ -69,6 +70,7 @@ export default function Home() {
   const [selectedBookId, setSelectedBookId] = useState("");
   const [filter, setFilter] = useState("");
   const [saveBookLoading, setSaveBookLoading] = useState(false);
+  const [enrichBookLoading, setEnrichBookLoading] = useState(false);
   const [bookMessage, setBookMessage] = useState<Message | null>(null);
   const [quoteMessage, setQuoteMessage] = useState<Message | null>(null);
   const [cbdbResult, setCbdbResult] = useState("");
@@ -89,6 +91,7 @@ export default function Home() {
     () => booksPage.items.find((book) => book.id === selectedBookId) ?? null,
     [booksPage.items, selectedBookId],
   );
+  const isSeriesBook = useCallback((title: string) => seriesTitleSuffixPattern.test(title.trim()), []);
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -414,6 +417,7 @@ export default function Home() {
     }
 
     setBookMessage(null);
+    setEnrichBookLoading(true);
     try {
       const response = await fetch(`/api/books/${selectedBookId}/enrich`, {
         method: "POST",
@@ -428,10 +432,12 @@ export default function Home() {
         loadQuotes(selectedBookId),
         loadSeriesProgress(selectedBookId),
       ]);
-      setBookMessage({ ok: true, text: "Metadata z CBDB doplnene." });
+      setBookMessage({ ok: true, text: "Metadáta z CBDB doplnené." });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Metadata enrich failed.";
       setBookMessage({ ok: false, text: message });
+    } finally {
+      setEnrichBookLoading(false);
     }
   }
 
@@ -486,15 +492,15 @@ export default function Home() {
           <p className="muted">Prehľad kníh, citátov a štatistík nad Google Sheets.</p>
         </div>
         <div className="header-actions">
-          <Link href="/stats" className="btn primary link-btn">
+          <Link href="/stats" className="btn primary link-btn header-btn">
             Štatistiky
           </Link>
           <div className="account-panel">
             <button
               type="button"
-              className="btn secondary link-btn"
-              onClick={() => signOut()}
-            >
+                className="btn secondary link-btn header-btn"
+                onClick={() => signOut()}
+              >
               Odhlásiť
             </button>
             <span className="badge session-email">{session?.user?.email}</span>
@@ -637,14 +643,33 @@ export default function Home() {
                 setBookForm(emptyBookForm);
                 setSelectedBookId("");
                 setQuotes([]);
+                setSeriesProgress(null);
               }}
             >
               Vyčistiť
             </button>
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => {
+                setBookForm(emptyBookForm);
+                setSelectedBookId("");
+                setQuotes([]);
+                setSeriesProgress(null);
+              }}
+            >
+              Nová kniha
+            </button>
           </div>
 
-          <button type="button" className="btn secondary mt" onClick={enrichSelectedBookFromCbdb}>
-            Doplniť metadáta z CBDB pre vybranú knihu
+          <button
+            type="button"
+            className="btn secondary mt"
+            onClick={enrichSelectedBookFromCbdb}
+            disabled={enrichBookLoading}
+            title="Doplniť metadáta z CBDB pre vybranú knihu"
+          >
+            {enrichBookLoading ? "Načítavam z CBDB..." : "Načítaj z CBDB"}
           </button>
 
           <label className="mt">Ručné dohľadanie metadát z cbdb.cz</label>
@@ -660,6 +685,7 @@ export default function Home() {
           </div>
           <pre className="muted pre-wrap">{cbdbResult}</pre>
           {saveBookLoading ? <p className="muted">Prebieha ukladanie knihy...</p> : null}
+          {enrichBookLoading ? <p className="muted">Načítavam metadáta z CBDB...</p> : null}
           {bookMessage ? (
             <p className={bookMessage.ok ? "message-ok" : "message-error"}>{bookMessage.text}</p>
           ) : null}
@@ -693,7 +719,10 @@ export default function Home() {
                 {booksPage.items.length ? (
                   booksPage.items.map((book) => (
                     <tr key={book.id} className="clickable" onClick={() => selectBook(book)}>
-                      <td>{book.title}</td>
+                      <td>
+                        <span>{book.title}</span>
+                        {isSeriesBook(book.title) ? <span className="series-mark">Séria</span> : null}
+                      </td>
                       <td>{book.author}</td>
                       <td>{book.finishedAt}</td>
                       <td>{book.rating || ""}</td>
@@ -727,6 +756,14 @@ export default function Home() {
               type="button"
               className="btn secondary compact"
               disabled={booksPage.page <= 1}
+              onClick={() => void loadBooksPage(1, filter)}
+            >
+              Prvá
+            </button>
+            <button
+              type="button"
+              className="btn secondary compact"
+              disabled={booksPage.page <= 1}
               onClick={() => void loadBooksPage(booksPage.page - 1, filter)}
             >
               Predošlá
@@ -741,6 +778,14 @@ export default function Home() {
               onClick={() => void loadBooksPage(booksPage.page + 1, filter)}
             >
               Ďalšia
+            </button>
+            <button
+              type="button"
+              className="btn secondary compact"
+              disabled={booksPage.page >= booksPage.totalPages}
+              onClick={() => void loadBooksPage(booksPage.totalPages, filter)}
+            >
+              Posledná
             </button>
           </div>
         </article>

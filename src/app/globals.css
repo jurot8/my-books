@@ -58,6 +58,10 @@ h2 {
   gap: 6px;
 }
 
+.header-btn {
+  min-width: 128px;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -236,6 +240,17 @@ th {
 .row-cbdb-btn {
   padding: 4px 8px;
   font-size: 12px;
+}
+
+.series-mark {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #065f46;
+  background: #d1fae5;
 }
 
 .pagination-row {
