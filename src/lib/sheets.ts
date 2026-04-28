@@ -814,7 +814,6 @@ export async function enrichBookFromMetadata(
     isbn?: string;
     pages?: number;
     publisher?: string;
-    description?: string;
   },
 ): Promise<Book> {
   const book = await getBookById(bookId);
@@ -834,9 +833,6 @@ export async function enrichBookFromMetadata(
   }
   if (!book.publisher && sanitizeString(metadata.publisher)) {
     patch.publisher = sanitizeString(metadata.publisher);
-  }
-  if (!book.notes && sanitizeString(metadata.description)) {
-    patch.notes = sanitizeString(metadata.description);
   }
 
   if (Object.keys(patch).length === 0) {

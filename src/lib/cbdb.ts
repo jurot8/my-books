@@ -277,23 +277,67 @@ export async function fetchCbdbSeriesFromBookUrl(bookUrl: string): Promise<CbdbS
   const seriesName = extractCbdbSeriesName(seriesHtml);
   const books: CbdbSeriesBook[] = [];
   const seenOrders = new Set<number>();
-  const itemRegex =
-    /<a[^>]+href="([^"]*kniha-[^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]{0,260}?\((\d+)\.\s*díl\)/gi;
+  const graph = parseJsonLd(seriesHtml);
+  const collectionNode = graph.find((node) => node["@type"] === "CollectionPage");
+  const itemList =
+    collectionNode &&
+    typeof collectionNode.mainEntity === "object" &&
+    collectionNode.mainEntity
+      ? (collectionNode.mainEntity as Record<string, unknown>)
+      : null;
+  const listItems = Array.isArray(itemList?.itemListElement) ? itemList.itemListElement : [];
 
-  for (const match of seriesHtml.matchAll(itemRegex)) {
-    const href = normalizeHref(match[1] ?? "");
-    const title = stripTags(match[2] ?? "");
-    const order = Number(match[3]);
-    if (!href || !title || !Number.isFinite(order) || seenOrders.has(order)) {
+  for (const entry of listItems) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const listItem = entry as Record<string, unknown>;
+    const item = listItem.item;
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const bookNode = item as Record<string, unknown>;
+    const rawTitle = typeof bookNode.name === "string" ? bookNode.name : "";
+    const rawUrl = typeof bookNode.url === "string" ? bookNode.url : "";
+    const rawPosition = listItem.position;
+    const order =
+      typeof rawPosition === "number"
+        ? rawPosition
+        : typeof rawPosition === "string"
+          ? Number(rawPosition)
+          : NaN;
+    if (!rawTitle || !rawUrl || !Number.isFinite(order) || seenOrders.has(order)) {
       continue;
     }
 
     seenOrders.add(order);
     books.push({
-      title,
+      title: decodeHtml(rawTitle).trim(),
       order,
-      url: toAbsoluteCbdbUrl(href),
+      url: toAbsoluteCbdbUrl(rawUrl),
     });
+  }
+
+  if (!books.length) {
+    const itemRegex =
+      /<a[^>]+href="([^"]*kniha-[^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]{0,1200}?\((\d+)\.\s*díl\)/gi;
+    for (const match of seriesHtml.matchAll(itemRegex)) {
+      const href = normalizeHref(match[1] ?? "");
+      const title = stripTags(match[2] ?? "");
+      const order = Number(match[3]);
+      if (!href || !title || !Number.isFinite(order) || seenOrders.has(order)) {
+        continue;
+      }
+
+      seenOrders.add(order);
+      books.push({
+        title,
+        order,
+        url: toAbsoluteCbdbUrl(href),
+      });
+    }
   }
 
   books.sort((a, b) => a.order - b.order);
